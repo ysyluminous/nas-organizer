@@ -170,7 +170,8 @@ bash scripts/install-skills.sh   # 安装到 ~/.workbuddy/skills/
 - [x] D2：205 文件夹别名 / 定时调度 / 323 种扩展名
 - [x] D3：两级回收站 / 12 类专项清理 / 备份审计 / 批量归类（MCP 增至 46）
 - [x] D4：反馈学习 / 可选 Ollama 兜底 / exif·ID3 媒体识别 / pHash 相似图片（MCP 增至 54）
-- [ ] D5–D7：虚拟目录、复核台、PWA 与超越验收
+- [x] D5：多维虚拟目录 / 断点续传 / CSV 全量 undo / 剧集识别 / 任务监控（MCP 增至 64）
+- [ ] D6–D7：复核台、自然语言、PWA 与超越验收
 - [ ] 真机多品牌联调
 
 ## D4 快速体验
@@ -190,6 +191,28 @@ python -m nas_organizer media phash-similar
 ```
 
 AI 未启用时零依赖、行为与 D3 完全一致；断网或无 Ollama 时自动降级为人工复核队列。详见 [进度计划 D4 报告](docs/进度计划.md)。
+
+## D5 快速体验
+
+```bash
+# 多维虚拟目录：不移动文件，同一文件多视角归类
+python -m nas_organizer view auto            # 按 域/类型/温度/年份 自动打标
+python -m nas_organizer view list            # 列出所有视图
+python -m nas_organizer view get "域:工作"    # 查看某视图（虚拟，源零改动）
+
+# 断点续传：计划中断后安全重跑（跳过已完成、重校验已复制文件）
+python -m nas_organizer execute 7 --resume
+python -m nas_organizer tasks                # 任务进度与历史
+
+# CSV 全量 undo：导出操作日志，跨实例生成反向回滚计划
+python -m nas_organizer undo export -o undo.csv
+python -m nas_organizer undo import undo.csv
+
+# 剧集季数识别（只读建议）
+python -m nas_organizer media season-suggest --target /write/series
+```
+
+虚拟目录、CSV undo、任务监控均不移动/删除源文件，落地写操作仍走「计划→确认→执行」链路。详见 [进度计划 D5 报告](docs/进度计划.md)。
 
 ## License
 

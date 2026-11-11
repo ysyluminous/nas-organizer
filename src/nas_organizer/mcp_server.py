@@ -27,7 +27,7 @@ from .db import Database
 from .planner import Planner
 from .security import PathGuard, PathViolation
 
-VERSION = "0.4.0"
+VERSION = "0.5.0"
 PROTOCOL_VERSION = "2025-06-18"
 
 
@@ -217,6 +217,25 @@ class MCPServer:
         s._register("phash_similar", "感知哈希查找相似图片（缩放/压缩同图），只读",
                     {"limit": {"type": "integer", "default": 50}},
                     handler=lambda a: s._phash_similar(a))
+        # ---- 只读：D5 虚拟目录 / 进度 / undo 预览 / 任务监控 ----
+        s._register("view_list", "列出所有虚拟目录视图（标签分组），不移动文件",
+                    handler=lambda a: s._view_list())
+        s._register("view_get", "查看一个虚拟视图下的文件（按标签检索）",
+                    {"tag": {"type": "string"}, "limit": {"type": "integer", "default": 100},
+                     "offset": {"type": "integer", "default": 0}}, ["tag"],
+                    handler=lambda a: s._view_get(a))
+        s._register("plan_progress", "查看计划执行进度（断点续传状态）",
+                    {"plan_id": {"type": "integer"}}, ["plan_id"],
+                    handler=lambda a: s._plan_progress(a))
+        s._register("csv_undo_preview", "从 CSV 预览回滚条目数量（只读，不生成计划）",
+                    {"path": {"type": "string"}}, ["path"],
+                    handler=lambda a: s._csv_undo_preview(a))
+        s._register("season_suggest", "剧集季数识别：生成 S01E02/第01集/EP02 归档建议（只读）",
+                    {"target_root": {"type": "string"}, "limit": {"type": "integer", "default": 200}},
+                    ["target_root"], handler=lambda a: s._season_suggest(a))
+        s._register("task_list", "任务监控：运行中任务进度与调度/操作历史（只读）",
+                    {"limit": {"type": "integer", "default": 50}},
+                    handler=lambda a: s._task_list(a))
 
         # ---- 受控写：需要 Token ----
         s._register("scan_start", "扫描配置的卷并建立索引（只读，不改文件）",
@@ -265,6 +284,18 @@ class MCPServer:
         s._register("feedback_reset", "清空全部人工反馈；必须 confirm=true",
                     {"confirm": {"type": "boolean"}}, ["confirm"],
                     lambda a: s._feedback_reset(a), write=True, confirm=True)
+        # D5 虚拟目录与可靠性写操作
+        s._register("view_tag", "给文件打标签（虚拟归类，不移动文件）",
+                    {"file_id": {"type": "integer"}, "tag": {"type": "string"}},
+                    ["file_id", "tag"], lambda a: s._view_tag(a), write=True)
+        s._register("view_untag", "移除文件标签（不移动文件）",
+                    {"file_id": {"type": "integer"}, "tag": {"type": "string"}},
+                    ["file_id", "tag"], lambda a: s._view_untag(a), write=True)
+        s._register("view_auto_tag", "按域/类型/温度/年份自动打标（幂等，不移动文件）",
+                    handler=lambda a: s._view_auto_tag(), write=True)
+        s._register("csv_undo_import", "从 CSV 生成回滚计划（只建计划，不执行文件操作）",
+                    {"path": {"type": "string"}, "name": {"type": "string"}}, ["path"],
+                    lambda a: s._csv_undo_import(a), write=True)
 
     # ---------- 工具实现：基础 ----------
 
@@ -603,6 +634,42 @@ class MCPServer:
             result["groups"] = result["groups"][:int(args.get("limit", 50))]
         return result
 
+    # ---------- 工具实现：D5 只读 ----------
+
+    def _view_list(self) -> dict:
+        from .virtual import VirtualDirectory
+        return VirtualDirectory(self.config, self.db).list_views()
+
+    def _view_get(self, args: dict) -> dict:
+        from .virtual import VirtualDirectory
+        return VirtualDirectory(self.config, self.db).view(
+            args["tag"], int(args.get("limit", 100)), int(args.get("offset", 0)))
+
+    def _plan_progress(self, args: dict) -> dict:
+        from .reliability import ProgressStore
+        return ProgressStore(self.db).get(int(args["plan_id"]))
+
+    def _csv_undo_preview(self, args: dict) -> dict:
+        import csv
+        p = Path(args["path"])
+        if not p.exists():
+            raise ToolError(f"CSV 不存在: {p}")
+        with p.open("r", newline="", encoding="utf-8-sig") as f:
+            count = sum(1 for _ in csv.DictReader(f))
+        return {"path": str(p), "entries": count, "note": "预览只读；import 才生成回滚计划"}
+
+    def _season_suggest(self, args: dict) -> dict:
+        from .reliability import SeasonOrganizer
+        root = self.guard.check(args["target_root"], source="mcp", action="suggest", write=True)
+        records = [r for r in self.db.get_all_active() if (r.ftype or "") == "视频"]
+        items = SeasonOrganizer(self.config, self.db).suggest(
+            records[:int(args.get("limit", 200))], str(root))
+        return {"count": len(items), "items": items}
+
+    def _task_list(self, args: dict) -> dict:
+        from .tasks import task_snapshot
+        return task_snapshot(self.db, int(args.get("limit", 50)))
+
     # ---------- 工具实现：受控写 ----------
 
     def _require_confirm(self, args: dict) -> None:
@@ -684,6 +751,24 @@ class MCPServer:
         from .feedback import FeedbackLearner
         removed = FeedbackLearner(self.config, self.db).reset()
         return {"ok": True, "removed": removed}
+
+    def _view_tag(self, args: dict) -> dict:
+        from .virtual import VirtualDirectory
+        return VirtualDirectory(self.config, self.db).tag(int(args["file_id"]), args["tag"])
+
+    def _view_untag(self, args: dict) -> dict:
+        from .virtual import VirtualDirectory
+        return VirtualDirectory(self.config, self.db).untag(int(args["file_id"]), args["tag"])
+
+    def _view_auto_tag(self) -> dict:
+        from .virtual import VirtualDirectory
+        return VirtualDirectory(self.config, self.db).auto_tag()
+
+    def _csv_undo_import(self, args: dict) -> dict:
+        p = Path(args["path"])
+        self.guard.check(p, source="mcp", action="undo-import")
+        from .reliability import CSVUndo
+        return CSVUndo(self.config, self.db).import_plan(str(p), args.get("name"))
 
     # ---------- JSON-RPC 调度 ----------
 

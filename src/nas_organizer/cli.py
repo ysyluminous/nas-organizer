@@ -39,6 +39,8 @@ def main(argv: list[str] | None = None) -> int:
     p_exec = sub.add_parser("execute", help="执行计划")
     p_exec.add_argument("plan_id", type=int)
     p_exec.add_argument("--limit", type=int, default=0)
+    p_exec.add_argument("--resume", action="store_true",
+                        help="断点续传：跳过已完成项，重校验已复制文件，中断可安全重跑")
 
     p_rb = sub.add_parser("rollback", help="回滚")
     p_rb.add_argument("--limit", type=int, default=0)
@@ -70,6 +72,29 @@ def main(argv: list[str] | None = None) -> int:
     p_fb_reset = fb_sub.add_parser("reset", help="清空全部反馈")
     p_fb_reset.add_argument("--confirm", action="store_true", help="确认清空（必须）")
 
+    p_view = sub.add_parser("view", help="多维虚拟目录（标签归类，不移动文件）")
+    view_sub = p_view.add_subparsers(dest="view_action", required=True)
+    view_sub.add_parser("list", help="列出所有虚拟视图")
+    p_vget = view_sub.add_parser("get", help="查看某视图下的文件")
+    p_vget.add_argument("tag")
+    p_vget.add_argument("--limit", type=int, default=100)
+    p_vtag = view_sub.add_parser("tag", help="给文件打标签")
+    p_vtag.add_argument("file_id", type=int)
+    p_vtag.add_argument("tag")
+    p_vuntag = view_sub.add_parser("untag", help="移除文件标签")
+    p_vuntag.add_argument("file_id", type=int)
+    p_vuntag.add_argument("tag")
+    view_sub.add_parser("auto", help="按域/类型/温度/年份自动打标（幂等）")
+
+    p_undo = sub.add_parser("undo", help="CSV 全量回滚（跨实例可移植）")
+    undo_sub = p_undo.add_subparsers(dest="undo_action", required=True)
+    p_uexp = undo_sub.add_parser("export", help="导出未回滚操作为 CSV")
+    p_uexp.add_argument("--output", "-o", required=True)
+    p_uexp.add_argument("--limit", type=int, default=0)
+    p_uimp = undo_sub.add_parser("import", help="从 CSV 生成回滚计划（不执行）")
+    p_uimp.add_argument("path")
+    p_uimp.add_argument("--name", default=None)
+
     p_media = sub.add_parser("media", help="媒体元数据感知（只读建议）")
     media_sub = p_media.add_subparsers(dest="media_action", required=True)
     media_sub.add_parser("capability", help="查看 exif/ID3/pHash 依赖可用性")
@@ -80,6 +105,11 @@ def main(argv: list[str] | None = None) -> int:
     p_music.add_argument("--target", required=True)
     p_music.add_argument("--limit", type=int, default=200)
     media_sub.add_parser("phash-similar", help="感知哈希查找相似图片（只读）")
+    p_season = media_sub.add_parser("season-suggest", help="剧集季数识别归档建议（只读）")
+    p_season.add_argument("--target", required=True)
+    p_season.add_argument("--limit", type=int, default=200)
+
+    sub.add_parser("tasks", help="查看任务监控快照（运行中进度与历史，只读）")
 
     p_recycle = sub.add_parser("recycle", help="两级回收站管理")
     rec_sub = p_recycle.add_subparsers(dest="recycle_action", required=True)
@@ -144,7 +174,7 @@ def main(argv: list[str] | None = None) -> int:
 
     elif args.command == "execute":
         from .executor import Executor
-        stats = Executor(config, db).execute_plan(args.plan_id, args.limit)
+        stats = Executor(config, db).execute_plan(args.plan_id, args.limit, resume=args.resume)
         print("[OK] 执行完成:", stats)
 
     elif args.command == "rollback":
@@ -167,6 +197,46 @@ def main(argv: list[str] | None = None) -> int:
             "SELECT volume, COUNT(*) n FROM files WHERE status='active' GROUP BY volume"
         ):
             print(f"  {row[0]}: {row[1]}")
+
+    elif args.command == "view":
+        from .virtual import VirtualDirectory
+        vd = VirtualDirectory(config, db)
+        action = args.view_action
+        if action == "list":
+            views = vd.list_views()
+            print(f"[OK] 虚拟视图共 {views['total_tags']} 个标签")
+            for prefix, tags in views["groups"].items():
+                print(f"  [{prefix}]")
+                for t in tags:
+                    print(f"    {t['name']}: {t['file_count']} 文件")
+        elif action == "get":
+            result = vd.view(args.tag, args.limit)
+            print(f"[OK] 视图 '{args.tag}'：{result['count']} 个文件（虚拟，未移动）")
+            for f in result["files"][:30]:
+                print(f"  {f['path']}")
+        elif action == "tag":
+            print("[OK] 打标:", vd.tag(args.file_id, args.tag)["tags"])
+        elif action == "untag":
+            print("[OK] 移除标签:", vd.untag(args.file_id, args.tag)["tags"])
+        elif action == "auto":
+            print("[OK] 自动打标:", vd.auto_tag())
+
+    elif args.command == "undo":
+        from .reliability import CSVUndo
+        cu = CSVUndo(config, db)
+        if args.undo_action == "export":
+            print("[OK] 导出:", cu.export(args.output, args.limit))
+        elif args.undo_action == "import":
+            print("[OK] 回滚计划:", cu.import_plan(args.path, args.name))
+
+    elif args.command == "tasks":
+        from .tasks import task_snapshot
+        snap = task_snapshot(db)
+        print(f"[OK] 运行中任务 {snap['running_count']} 个")
+        for t in snap["recent"]:
+            print(f"  [{t['status']}] {t['name']}: {t['done']}/{t['total']} ({t['progress']:.0%})")
+        for h in snap["history"][:20]:
+            print(f"  [history:{h['source']}] {h['name']}: {h['status']} {h['duration_sec']}s")
 
     elif args.command == "feedback":
         from .feedback import FeedbackLearner
@@ -220,6 +290,14 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"  [距离 {g['max_distance']}] {g['paths'][0]}")
                 for p in g["paths"][1:]:
                     print(f"      ≈ {p}")
+        elif action == "season-suggest":
+            from .reliability import SeasonOrganizer
+            root = guard.check(args.target, source="cli", action="suggest", write=True)
+            recs = [r for r in db.get_all_active() if (r.ftype or "") == "视频"][:args.limit]
+            items = SeasonOrganizer(config, db).suggest(recs, str(root))
+            print(f"[OK] 剧集归档建议 {len(items)} 项（只读，未移动）")
+            for it in items[:30]:
+                print(f"  S{it['season']:02d}E{it['episode']:02d} {it['title']}\n      -> {it['dst_path']}")
 
     elif args.command == "recycle":
         from .recycle import RecycleBin

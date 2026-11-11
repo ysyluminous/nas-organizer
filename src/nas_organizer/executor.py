@@ -23,29 +23,66 @@ class Executor:
         self.guard = PathGuard(config)
         self.recycle = RecycleBin(config, db)
 
-    def execute_plan(self, plan_id: int, limit: int = 0) -> dict:
-        """执行计划中 pending 的条目."""
+    def execute_plan(self, plan_id: int, limit: int = 0, resume: bool = False) -> dict:
+        """执行计划中 pending 的条目。
+
+        D5 断点续传：resume=True 时跳过 status=done 的条目，并对目标已存在的
+        done 项重校验哈希，损坏则重置为 pending 重跑（防中断时写坏）。
+        """
+        from .reliability import ProgressStore
+
         plan = self.db.get_plan(plan_id)
         if not plan:
             raise ValueError(f"计划 {plan_id} 不存在")
-        if plan.status not in ("draft", "confirmed"):
+        if plan.status not in ("draft", "confirmed", "executing"):
             raise ValueError(f"计划状态 {plan.status} 不可执行")
 
         with self.db.transaction() as conn:
             conn.execute("UPDATE plans SET status='executing' WHERE id=?", (plan_id,))
 
+        progress = ProgressStore(self.db)
         items = [i for i in plan.items if i.status == "pending"]
+        if resume:
+            # 已完成的项：目标存在且哈希一致则跳过；否则重置重跑
+            for done_item in (i for i in plan.items if i.status == "done"):
+                dst = Path(done_item.dst_path or "")
+                if dst.exists() and self._verify_exists(dst, done_item.id):
+                    continue
+                self._set_item_status(done_item.id, "pending", "续传重校验未通过，重新执行")
+                items.insert(0, done_item)
         if limit > 0:
             items = items[:limit]
 
-        stats = {"total": len(items), "done": 0, "failed": 0, "skipped": 0}
+        stats = {"total": len(items), "done": 0, "failed": 0, "skipped": 0,
+                 "resumed": bool(resume)}
         for item in items:
             result = self._execute_item(item.id, item.src_path, item.dst_path or "")
             stats[result] += 1
+            if result == "done":
+                progress.mark_done(plan_id, item.id, total=len(plan.items))
 
+        # 全部 pending 清空才算 done；否则保持 executing 供续传
+        remaining = self.db.connect().execute(
+            "SELECT COUNT(*) AS n FROM plan_items WHERE plan_id=? AND status='pending'",
+            (plan_id,),
+        ).fetchone()["n"]
+        final_status = "done" if remaining == 0 else "executing"
         with self.db.transaction() as conn:
-            conn.execute("UPDATE plans SET status='done' WHERE id=?", (plan_id,))
+            conn.execute("UPDATE plans SET status=? WHERE id=?", (final_status, plan_id))
         return stats
+
+    def _verify_exists(self, dst: Path, item_id: int) -> bool:
+        """续传重校验：op_logs 里记录了目标 sha256 时逐字节校验，否则仅比存在性。"""
+        row = self.db.connect().execute(
+            "SELECT sha256 FROM op_logs WHERE plan_item_id=? ORDER BY id DESC LIMIT 1",
+            (item_id,),
+        ).fetchone()
+        if row and row["sha256"]:
+            try:
+                return self._sha256(dst) == row["sha256"]
+            except OSError:
+                return False
+        return True
 
     def _execute_item(self, item_id: int, src: str, dst: str) -> str:
         if not dst:

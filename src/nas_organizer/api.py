@@ -313,6 +313,26 @@ def classify():
     return Classifier(_config or Config.load(), _get_db()).classify_all()
 
 
+@app.get("/api/tasks")
+def tasks(limit: int = 50):
+    """任务监控：运行中进度 + 调度/操作历史（只读，不触发任务）。"""
+    from .tasks import task_snapshot
+    return task_snapshot(_get_db(), limit)
+
+
+@app.get("/api/views")
+def list_views():
+    """虚拟目录视图清单（按标签分组，不移动文件）。"""
+    from .virtual import VirtualDirectory
+    return VirtualDirectory(_config, _get_db()).list_views()
+
+
+@app.get("/api/views/{tag}")
+def get_view(tag: str, limit: int = 100, offset: int = 0):
+    from .virtual import VirtualDirectory
+    return VirtualDirectory(_config, _get_db()).view(tag, limit, offset)
+
+
 @app.post("/api/dedupe")
 def dedupe():
     from .dedupe import Deduper

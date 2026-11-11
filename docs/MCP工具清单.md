@@ -1,7 +1,7 @@
-# MCP 工具清单（54 个原子工具）
+# MCP 工具清单（64 个原子工具）
 
 > `src/nas_organizer/mcp_server.py` 实现，纯标准库 JSON-RPC 2.0 over stdio，无额外依赖。
-> 行为契约见仓库根 [AGENTS.md](../AGENTS.md)。同类对比中 Nasio 26 个、zspace-cli 24 个，本项目 **54 个**（D4 由 46 增至 54）。
+> 行为契约见仓库根 [AGENTS.md](../AGENTS.md)。同类对比中 Nasio 26 个、zspace-cli 24 个，本项目 **64 个**（D4 增至 54，D5 增至 64）。
 
 ## 1. 启动与认证
 
@@ -20,14 +20,14 @@ docker compose run --rm \
 
 | 场景 | 行为 |
 |---|---|
-| 不设 Token | **只读模式**：41 个只读工具可用，13 个写工具返回"需要授权" |
+| 不设 Token | **只读模式**：47 个只读工具可用，17 个写工具返回"需要授权" |
 | Token 无效 / 过期 | 服务启动即失败，不降级为只读 |
-| Token 有效 | 全部 54 个工具可用 |
+| Token 有效 | 全部 64 个工具可用 |
 | `execute` / `rollback` / `backup_hot` / `feedback_reset` | 除有效 Token 外，还必须在参数里带 `confirm=true` |
 
 Token 复用 Web 登录体系（PBKDF2 + HMAC 签名），改密后旧 Token 立即失效。
 
-## 2. 只读工具（41 个，无需 Token）
+## 2. 只读工具（47 个，无需 Token）
 
 ### 基础与安全（7）
 
@@ -100,7 +100,18 @@ Token 复用 Web 登录体系（PBKDF2 + HMAC 签名），改密后旧 Token 立
 | `music_plan_suggest` | 按 ID3 标签生成音乐归档建议（只读，不移动） |
 | `phash_similar` | 感知哈希查找缩放/压缩后的相似图片，只读 |
 
-## 3. 受控写工具（13 个，需 Token）
+### D5 虚拟目录 / 进度 / 任务监控（6）
+
+| 工具 | 用途 |
+|---|---|
+| `view_list` | 列出所有虚拟目录视图（标签分组），不移动文件 |
+| `view_get` | 查看一个虚拟视图下的文件（按标签检索） |
+| `plan_progress` | 查看计划执行进度（断点续传状态） |
+| `csv_undo_preview` | 从 CSV 预览回滚条目数量（只读） |
+| `season_suggest` | 剧集季数识别归档建议（S01E02 / 第N集 / EP） |
+| `task_list` | 任务监控：运行中进度与调度/操作历史（只读） |
+
+## 3. 受控写工具（17 个，需 Token）
 
 | 工具 | 是否需 confirm | 说明 |
 |---|:---:|---|
@@ -117,8 +128,12 @@ Token 复用 Web 登录体系（PBKDF2 + HMAC 签名），改密后旧 Token 立
 | `recycle_purge` | **是** | 物理清除 stage2（不可逆），仅 stage2 允许 |
 | `feedback_add` | 否 | 记录一次人工纠正（关键词→域/类型），只写索引库 |
 | `feedback_reset` | **是** | 清空全部人工反馈，必须 `confirm=true` |
+| `view_tag` | 否 | 给文件打标签（虚拟归类，不移动文件） |
+| `view_untag` | 否 | 移除文件标签（不移动文件） |
+| `view_auto_tag` | 否 | 按域/类型/温度/年份自动打标（幂等） |
+| `csv_undo_import` | 否 | 从 CSV 生成回滚计划（只建计划，不执行文件操作） |
 
-> 注意：`scan_start` 等虽标为"写工具"，是因为它们会更新索引库；它们**不改动用户文件**。清除回收站只能清 stage2，stage1 必须先提升。反馈写操作同样只改索引库，AI 默认关闭且失败静默降级。
+> 注意：`scan_start` 等虽标为"写工具"，是因为它们会更新索引库；它们**不改动用户文件**。清除回收站只能清 stage2，stage1 必须先提升。反馈写操作同样只改索引库，AI 默认关闭且失败静默降级。虚拟目录用标签实现，绝不移动文件；CSV undo 只生成计划不自动执行。
 
 ## 4. JSON-RPC 示例
 
@@ -153,6 +168,6 @@ Token 复用 Web 登录体系（PBKDF2 + HMAC 签名），改密后旧 Token 立
 
 ## 6. 与 Skill 的关系
 
-- **MCP** 提供原子能力（54 个工具），适合 Agent 编排与跨客户端复用
+- **MCP** 提供原子能力（64 个工具），适合 Agent 编排与跨客户端复用
 - **Skill** 提供工作流（9 个专项 + 1 路由），把工具串成有安全关卡的流程
 - 两者共享同一份 `AGENTS.md` 行为契约与 `PathGuard` 路径边界

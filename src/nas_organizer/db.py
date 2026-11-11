@@ -314,6 +314,81 @@ class Database:
         with self.transaction() as conn:
             conn.execute("UPDATE op_logs SET rolled_back=1 WHERE id=?", (log_id,))
 
+    # ---- tags / 虚拟目录（D5 多维归类，不移动源文件）----
+
+    def ensure_tag(self, name: str, color: str | None = None) -> int:
+        """取得标签 ID，不存在则创建。返回 tag id。"""
+        name = name.strip()
+        if not name:
+            raise ValueError("标签名不能为空")
+        with self.transaction() as conn:
+            conn.execute(
+                "INSERT OR IGNORE INTO tags (name, color) VALUES (?, ?)",
+                (name, color),
+            )
+            row = conn.execute("SELECT id FROM tags WHERE name=?", (name,)).fetchone()
+            return int(row["id"])
+
+    def tag_file(self, file_id: int, tag: str, color: str | None = None) -> None:
+        """给文件打标签（幂等）；源文件零改动。"""
+        tid = self.ensure_tag(tag, color)
+        with self.transaction() as conn:
+            conn.execute(
+                "INSERT OR IGNORE INTO file_tags (file_id, tag_id) VALUES (?, ?)",
+                (file_id, tid),
+            )
+
+    def untag_file(self, file_id: int, tag: str) -> None:
+        with self.transaction() as conn:
+            conn.execute(
+                """DELETE FROM file_tags WHERE file_id=? AND tag_id IN
+                   (SELECT id FROM tags WHERE name=?)""",
+                (file_id, tag),
+            )
+
+    def list_tags(self) -> list[dict]:
+        rows = self.connect().execute(
+            """SELECT t.id, t.name, t.color, COUNT(ft.file_id) AS file_count
+               FROM tags t LEFT JOIN file_tags ft ON ft.tag_id=t.id
+               GROUP BY t.id ORDER BY file_count DESC, t.name"""
+        ).fetchall()
+        return [{"id": int(r["id"]), "name": r["name"], "color": r["color"],
+                 "file_count": int(r["file_count"])} for r in rows]
+
+    def get_file_tags(self, file_id: int) -> list[str]:
+        rows = self.connect().execute(
+            """SELECT t.name FROM tags t JOIN file_tags ft ON ft.tag_id=t.id
+               WHERE ft.file_id=? ORDER BY t.name""",
+            (file_id,),
+        ).fetchall()
+        return [r["name"] for r in rows]
+
+    def files_by_tag(self, tag: str, limit: int = 100, offset: int = 0) -> list[dict]:
+        """按标签查文件（可多视角：同一文件可属多个标签）。"""
+        rows = self.connect().execute(
+            """SELECT f.* FROM files f
+               JOIN file_tags ft ON ft.file_id=f.id
+               JOIN tags t ON t.id=ft.tag_id
+               WHERE t.name=? AND f.status='active'
+               ORDER BY f.path LIMIT ? OFFSET ?""",
+            (tag, limit, offset),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def delete_tag(self, tag: str) -> int:
+        """删除标签及其所有关联（不动文件）。返回清理的关联数。"""
+        with self.transaction() as conn:
+            row = conn.execute("SELECT id FROM tags WHERE name=?", (tag,)).fetchone()
+            if not row:
+                return 0
+            tid = int(row["id"])
+            count = conn.execute(
+                "SELECT COUNT(*) AS n FROM file_tags WHERE tag_id=?", (tid,)
+            ).fetchone()["n"]
+            conn.execute("DELETE FROM file_tags WHERE tag_id=?", (tid,))
+            conn.execute("DELETE FROM tags WHERE id=?", (tid,))
+            return int(count)
+
     # ---- feedback（D4 反馈学习）----
 
     def add_feedback(self, keyword: str, field: str, value: str) -> None:
