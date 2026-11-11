@@ -172,8 +172,8 @@ bash scripts/install-skills.sh   # 安装到 ~/.workbuddy/skills/
 - [x] D4：反馈学习 / 可选 Ollama 兜底 / exif·ID3 媒体识别 / pHash 相似图片（MCP 增至 54）
 - [x] D5：多维虚拟目录 / 断点续传 / CSV 全量 undo / 剧集识别 / 任务监控（MCP 增至 64）
 - [x] D6：人工复核台 / 视频关键帧 / rclone 只读索引 / 自然语言意图映射（MCP 增至 72）
-- [ ] D7：长尾插件、PWA 与全量超越验收
-- [ ] 真机多品牌联调
+- [x] D7：FTS5 全文搜索 / 可选 OCR / GGUF 文档 / PWA（MCP 增至 76，综合评分 4.95）
+- [ ] 真机多品牌联调（唯一剩余项：需在你的 NAS 上实际部署验证）
 
 ## D4 快速体验
 
@@ -230,6 +230,22 @@ python -m nas_organizer remote ls "nas:Media" # rclone lsjson 只读预览（需
 ```
 
 自然语言交互通过 Agent 调用（服务端只接受结构化参数、不接 LLM）：例如"帮我体检 NAS"→ `get_stats`，"找重复先出清单别删"→ `list_duplicates`，"这些文件归到工作"→ `review_queue`/`review_decide`。调用 `intent_schema` 工具可获取完整意图映射表。详见 [进度计划 D6 报告](docs/进度计划.md)。
+
+## D7 快速体验（7 天路线图收官）
+
+```bash
+# FTS5 全文搜索：中文子串也能命中（先建索引）
+python -m nas_organizer reindex --force
+python -m nas_organizer search 财务报表      # 命中"财务报表2024.pdf"
+python -m nas_organizer search 报表          # 子串同样命中
+
+# 查看全部可选能力（AI/OCR/FFmpeg/rclone/exif/ID3/pHash）
+python -m nas_organizer plugins
+```
+
+Web 控制台现支持 PWA：手机浏览器打开后选"添加到主屏幕"即可像 App 一样使用（Service Worker 不缓存任何 `/api/` 数据，安全性不退化）。可选本地模型与 GGUF 加载见 [GGUF与本地模型](docs/GGUF与本地模型.md)。
+
+**七天成果**：76 个 MCP 工具（同类标杆 26）、10 个 Skill（标杆 9）、323 扩展名/205 别名（标杆 255/135）、两级回收站、FTS5 搜索、PWA，综合评分 **4.95/5.00**（D0 4.05）。所有写操作沿用 `dry-run → 确认 → 执行 → 审计 → 回滚`，安全评分始终保持 5。详见 [进度计划全量验收](docs/进度计划.md#13-d7-完成报告--全量验收2026-11-11)。
 
 ## License
 

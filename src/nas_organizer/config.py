@@ -50,6 +50,10 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "review": {"threshold": 0.8},
     # D6 rclone 远端索引（需 rclone，缺失自动降级；只读 lsjson）
     "remote": {"volume": "remote"},
+    # D7 轻量语义搜索（FTS5，不引入向量库）
+    "search": {"enabled": True},
+    # D7 可选 OCR 提取器：默认关闭，需系统 tesseract
+    "extractor": {"enabled": False, "provider": "tesseract", "lang": "chi_sim+eng"},
     "web": {"host": "0.0.0.0", "port": 8765},
 }
 

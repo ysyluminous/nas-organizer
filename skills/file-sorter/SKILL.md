@@ -25,6 +25,19 @@ description: NAS 混合文件堆的通用归类。按归属域（个人/工作/�
 `{write_target}/{volume}/{domain}/{ftype}/{temp}/{filename}`
 冲突时按时间戳重命名，**不覆盖**。
 
+## 作品集 / 成果目录整理（D7 规则）
+
+识别设计、摄影、作品集类目录（含 `cover.*`、`README*`、`finals/`、`drafts/`、`源工程/` 等），
+用 `search(query="cover")` / `list_files` 定位后，按 `作品名/{cover, README, finals, 源工程}/` 生成计划：
+
+1. `cover.*` → `作品名/cover/`（封面/缩略图）
+2. `README*` / `说明*` → `作品名/` 根目录
+3. `finals/` `成片/` `交付/` → `作品名/finals/`（最终交付）
+4. `drafts/` `过程/` `源工程/` `*.psd` `*.ai` → `作品名/源工程/`
+5. 只出计划、用户确认后执行；不拆散单一作品内的关联文件
+
+此规则只做规则匹配，**不引入 AI 判断**；不确定时归入低置信度走复核台。
+
 ## 边界
 
 - 默认 dry-run：只出计划不执行是合法结果

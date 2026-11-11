@@ -27,7 +27,7 @@ from .db import Database
 from .planner import Planner
 from .security import PathGuard, PathViolation
 
-VERSION = "0.6.0"
+VERSION = "0.7.0"
 PROTOCOL_VERSION = "2025-06-18"
 
 
@@ -257,6 +257,15 @@ class MCPServer:
         s._register("remote_lsjson", "rclone lsjson 只读预览远端文件（不下载不同步，需配置 rclone）",
                     {"remote": {"type": "string"}, "limit": {"type": "integer", "default": 100}},
                     ["remote"], handler=lambda a: s._remote_lsjson(a))
+        # ---- 只读：D7 轻量搜索与插件能力 ----
+        s._register("search", "FTS5 全文检索：文件名/路径/标签（只读，无向量库）",
+                    {"query": {"type": "string"}, "limit": {"type": "integer", "default": 50},
+                     "offset": {"type": "integer", "default": 0}}, ["query"],
+                    handler=lambda a: s._search(a))
+        s._register("search_stats", "查看 FTS5 索引状态（只读）",
+                    handler=lambda a: s._search_stats())
+        s._register("plugin_capability", "查看可选插件（OCR/GGUF 等）能力（只读）",
+                    handler=lambda a: s._plugin_capability())
 
         # ---- 受控写：需要 Token ----
         s._register("scan_start", "扫描配置的卷并建立索引（只读，不改文件）",
@@ -324,6 +333,9 @@ class MCPServer:
                      "note": {"type": "string"}, "learn": {"type": "boolean", "default": True}},
                     ["file_id", "field", "value", "confirm"],
                     lambda a: s._review_decide(a), write=True, confirm=True)
+        # D7 搜索索引重建（只写索引库，不动文件）
+        s._register("search_reindex", "重建 FTS5 全文索引（只写索引库，不动文件）",
+                    handler=lambda a: s._search_reindex(), write=True)
 
     # ---------- 工具实现：基础 ----------
 
@@ -714,6 +726,30 @@ class MCPServer:
         from .review import ReviewQueue
         rows = ReviewQueue(self.config, self.db).history(int(args.get("limit", 100)))
         return {"count": len(rows), "items": rows}
+
+    def _search(self, args: dict) -> dict:
+        from .search import SearchIndex
+        return SearchIndex(self.config, self.db).search(
+            args["query"], int(args.get("limit", 50)), int(args.get("offset", 0)))
+
+    def _search_stats(self) -> dict:
+        from .search import SearchIndex
+        return SearchIndex(self.config, self.db).stats()
+
+    def _plugin_capability(self) -> dict:
+        from .extractors import capability as extractor_caps
+        from .remote import capability as tool_caps
+        from .media import MediaOrganizer
+        from .perceptual import PerceptualFinder
+        caps = {"extractors": extractor_caps(), "tools": tool_caps(),
+                "media": MediaOrganizer.capability()}
+        caps["media"].update(PerceptualFinder.capability())
+        caps["ocr_enabled"] = bool(self.config.get("extractor.enabled", False))
+        return caps
+
+    def _search_reindex(self) -> dict:
+        from .search import SearchIndex
+        return SearchIndex(self.config, self.db).build_index()
 
     def _external_capability(self) -> dict:
         from .remote import capability

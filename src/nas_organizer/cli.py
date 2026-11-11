@@ -119,6 +119,14 @@ def main(argv: list[str] | None = None) -> int:
     p_rls.add_argument("remote", help="name:path 形式（rclone 配置名）")
     p_rls.add_argument("--limit", type=int, default=100)
 
+    p_search = sub.add_parser("search", help="全文检索（FTS5，不引入向量库）")
+    p_search.add_argument("query")
+    p_search.add_argument("--limit", type=int, default=50)
+    p_reindex = sub.add_parser("reindex", help="重建 FTS5 全文索引（只写索引库）")
+    p_reindex.add_argument("--force", action="store_true", help="确认重建")
+
+    sub.add_parser("plugins", help="查看所有可选插件/外部工具能力")
+
     p_review = sub.add_parser("review", help="复核台：低置信度分类与冲突计划人工裁决")
     rev_sub = p_review.add_subparsers(dest="review_action", required=True)
     p_rq = rev_sub.add_parser("queue", help="列出待复核队列")
@@ -250,6 +258,30 @@ def main(argv: list[str] | None = None) -> int:
             print("[OK] 导出:", cu.export(args.output, args.limit))
         elif args.undo_action == "import":
             print("[OK] 回滚计划:", cu.import_plan(args.path, args.name))
+
+    elif args.command == "search":
+        from .search import SearchIndex
+        result = SearchIndex(config, db).search(args.query, args.limit)
+        print(f"[OK] 搜索 '{args.query}'：{result['count']} 命中（引擎 {result['engine']}）")
+        for r in result["results"][:50]:
+            print(f"  {r.get('ftype') or ''}/{r.get('domain') or ''} {r['path']}")
+    elif args.command == "reindex":
+        from .search import SearchIndex
+        if not args.force:
+            print("[拒绝] 重建索引需要 --force 确认")
+        else:
+            print("[OK] 索引重建:", SearchIndex(config, db).build_index())
+    elif args.command == "plugins":
+        from .extractors import capability as ec
+        from .remote import capability as rc
+        from .media import MediaOrganizer
+        from .perceptual import PerceptualFinder
+        print("可选插件 / 外部工具能力：")
+        for group, caps in [("extractors", ec()), ("tools", rc()),
+                            ("media", {**MediaOrganizer.capability(), **PerceptualFinder.capability()})]:
+            for k, v in caps.items():
+                print(f"  [{group}] {k}: {'可用' if v else '不可用（优雅降级）'}")
+        print(f"  OCR 启用: {bool(config.get('extractor.enabled', False))}（默认关）")
 
     elif args.command == "remote":
         from .remote import RcloneIndexer, capability

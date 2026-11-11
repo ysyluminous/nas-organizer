@@ -1,0 +1,19 @@
+{
+  "name": "NAS Organizer",
+  "short_name": "NAS整理",
+  "description": "NAS 数据索引、分类、查重与治理控制台",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f5f6f8",
+  "theme_color": "#2563eb",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/static/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

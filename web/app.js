@@ -285,6 +285,13 @@ async function boot() {
   }
 }
 
+// PWA：注册 Service Worker（失败不影响主应用；不缓存任何 /api/ 数据）
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
+  });
+}
+
 $('#login-password').addEventListener('keydown', (e) => { if (e.key === 'Enter') doLogin(); });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closePwdModal(); });
 boot();

@@ -1,7 +1,7 @@
-# MCP 工具清单（72 个原子工具）
+# MCP 工具清单（76 个原子工具）
 
 > `src/nas_organizer/mcp_server.py` 实现，纯标准库 JSON-RPC 2.0 over stdio，无额外依赖。
-> 行为契约见仓库根 [AGENTS.md](../AGENTS.md)。同类对比中 Nasio 26 个、zspace-cli 24 个，本项目 **72 个**（D4→54，D5→64，D6→72）。
+> 行为契约见仓库根 [AGENTS.md](../AGENTS.md)。同类对比中 Nasio 26 个、zspace-cli 24 个，本项目 **76 个**（D4→54，D5→64，D6→72，D7→76）。
 
 ## 1. 启动与认证
 
@@ -20,14 +20,14 @@ docker compose run --rm \
 
 | 场景 | 行为 |
 |---|---|
-| 不设 Token | **只读模式**：54 个只读工具可用，18 个写工具返回"需要授权" |
+| 不设 Token | **只读模式**：57 个只读工具可用，19 个写工具返回"需要授权" |
 | Token 无效 / 过期 | 服务启动即失败，不降级为只读 |
-| Token 有效 | 全部 72 个工具可用 |
+| Token 有效 | 全部 76 个工具可用 |
 | `execute` / `rollback` / `backup_hot` / `feedback_reset` | 除有效 Token 外，还必须在参数里带 `confirm=true` |
 
 Token 复用 Web 登录体系（PBKDF2 + HMAC 签名），改密后旧 Token 立即失效。
 
-## 2. 只读工具（54 个，无需 Token）
+## 2. 只读工具（57 个，无需 Token）
 
 ### 基础与安全（7）
 
@@ -123,7 +123,15 @@ Token 复用 Web 登录体系（PBKDF2 + HMAC 签名），改密后旧 Token 立
 | `video_similar` | FFmpeg 关键帧比对相似视频（缺 FFmpeg 优雅降级） |
 | `remote_lsjson` | rclone lsjson 只读预览远端（不下载/不同步/不删除） |
 
-## 3. 受控写工具（18 个，需 Token）
+### D7 轻量搜索与插件能力（3）
+
+| 工具 | 用途 |
+|---|---|
+| `search` | FTS5 全文检索：文件名/路径/标签（只读，中文 2-gram 子串可命中） |
+| `search_stats` | 查看 FTS5 索引状态（只读） |
+| `plugin_capability` | 查看 OCR/GGUF/媒体/外部工具所有可选能力（只读） |
+
+## 3. 受控写工具（19 个，需 Token）
 
 | 工具 | 是否需 confirm | 说明 |
 |---|:---:|---|
@@ -145,6 +153,7 @@ Token 复用 Web 登录体系（PBKDF2 + HMAC 签名），改密后旧 Token 立
 | `view_auto_tag` | 否 | 按域/类型/温度/年份自动打标（幂等） |
 | `csv_undo_import` | 否 | 从 CSV 生成回滚计划（只建计划，不执行文件操作） |
 | `review_decide` | **是** | 人工裁决：修正分类并写回反馈，必须 `confirm=true` |
+| `search_reindex` | 否 | 重建 FTS5 全文索引（只写索引库，不动文件） |
 
 > 注意：`scan_start` 等虽标为"写工具"，是因为它们会更新索引库；它们**不改动用户文件**。清除回收站只能清 stage2，stage1 必须先提升。反馈写操作同样只改索引库，AI 默认关闭且失败静默降级。虚拟目录用标签实现，绝不移动文件；CSV undo 只生成计划不自动执行。复核裁决是受控写（需 Token + confirm），只改索引与反馈、不动用户文件。
 
@@ -181,6 +190,6 @@ Token 复用 Web 登录体系（PBKDF2 + HMAC 签名），改密后旧 Token 立
 
 ## 6. 与 Skill 的关系
 
-- **MCP** 提供原子能力（72 个工具），适合 Agent 编排与跨客户端复用
+- **MCP** 提供原子能力（76 个工具），适合 Agent 编排与跨客户端复用
 - **Skill** 提供工作流（9 个专项 + 1 路由），把工具串成有安全关卡的流程
 - 两者共享同一份 `AGENTS.md` 行为契约与 `PathGuard` 路径边界

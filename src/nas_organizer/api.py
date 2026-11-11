@@ -173,6 +173,24 @@ def index():
     return {"message": "NAS Organizer API", "docs": "设置 NAS_ORGANIZER_DOCS=1 可启用"}
 
 
+@app.get("/manifest.webmanifest")
+def manifest():
+    p = Path(__file__).parent.parent.parent / "web" / "manifest.webmanifest"
+    if not p.exists():
+        raise HTTPException(404, "manifest 不存在")
+    return FileResponse(str(p), media_type="application/manifest+json")
+
+
+@app.get("/sw.js")
+def service_worker():
+    """Service Worker 必须在根作用域；明确禁用缓存，保证更新即时生效。"""
+    p = Path(__file__).parent.parent.parent / "web" / "sw.js"
+    if not p.exists():
+        raise HTTPException(404, "sw.js 不存在")
+    return FileResponse(str(p), media_type="application/javascript",
+                        headers={"Cache-Control": "no-cache", "Service-Worker-Allowed": "/"})
+
+
 @app.get("/api/stats")
 def stats():
     db = _get_db()
