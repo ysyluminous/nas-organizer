@@ -125,6 +125,11 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fo
 .cap-state { margin-left: auto; color: var(--text-3); font-size: 11px; }
 .cap-item.on .cap-state { color: var(--success); }
 
+/* 首启引导 */
+.onboarding { border-left: 3px solid var(--primary); }
+.onboarding ol { margin: 8px 0; padding-left: 22px; color: var(--text-2); }
+.onboarding li { margin: 6px 0; }
+
 .hint { color: var(--text-3); font-size: 12px; }
 .hint.warning, .warning { color: var(--warn); }
 .error { color: var(--danger); font-size: 12px; min-height: 16px; margin: 8px 0 0; }

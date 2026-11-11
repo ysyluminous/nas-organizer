@@ -5,6 +5,11 @@ const getToken = () => sessionStorage.getItem(TOKEN_KEY) || '';
 const setToken = (t) => t ? sessionStorage.setItem(TOKEN_KEY, t) : sessionStorage.removeItem(TOKEN_KEY);
 
 const $ = (s) => document.querySelector(s);
+/** 以编程方式切换 Tab（首启引导等场景使用），复用导航点击逻辑 */
+function goTab(name) {
+  const btn = document.querySelector(`nav button[data-tab="${name}"]`);
+  if (btn) btn.click();
+}
 
 // 主题必须在首屏前应用，避免闪烁
 (function applyInitialTheme() {
@@ -141,7 +146,7 @@ async function doChangePassword() {
 
 const loadedTabs = new Set();
 const TAB_LOADERS = {
-  overview: loadStats, search: loadSearchStats, duplicates: loadDuplicates,
+  overview: loadStats, files: loadFiles, search: loadSearchStats, duplicates: loadDuplicates,
   views: loadViews, plans: loadPlans, cleanup: loadCleanupKinds,
   recycle: loadRecycle, review: loadReview, media: loadMedia, tasks: loadTasks,
 };
@@ -189,6 +194,66 @@ async function loadStats() {
     bars($('#by-ftype'), s.by_ftype, 'ftype', 'n');
     bars($('#by-temp'), s.by_temp, 'temp', 'n');
     bars($('#by-volume'), s.by_volume, 'volume', 'n');
+    // 首启引导：索引为空时给出明确的下一步，避免新用户面对空白页
+    const oldGuide = document.getElementById('onboarding');
+    if (oldGuide) oldGuide.remove();
+    if (s.total === 0) {
+      el.insertAdjacentHTML('afterend', `<div class="panel onboarding" id="onboarding">
+        <h3>欢迎使用 NAS Organizer，三步开始</h3>
+        <ol>
+          <li>确认 <code>config/config.yaml</code> 中的挂载路径指向你的 NAS 目录（只读挂载即可）。</li>
+          <li>到「操作」页点击 <b>扫描建索引</b>，让系统读取文件元数据。</li>
+          <li>运行 <b>重新分类</b> 与 <b>重复检测</b>，然后到「迁移计划」生成并确认整理方案。</li>
+        </ol>
+        <p class="hint">所有整理默认只生成计划、不直接移动文件；执行需二次确认，且可随时回滚。</p>
+        <div class="btn-row"><button class="primary" onclick="goTab('actions')">前往操作页 →</button></div>
+      </div>`);
+    }
+  } catch (e) { setError(el, e.message); }
+}
+
+// ---------- 文件浏览（筛选 + 分页） ----------
+
+const FILE_PAGE_SIZE = 50;
+let fileOffset = 0;
+async function loadFiles(page = 1) {
+  const el = $('#file-list');
+  fileOffset = (page - 1) * FILE_PAGE_SIZE;
+  if (page === 1) {
+    // 首次加载：用当前索引的统计结果填充筛选下拉，避免硬编码分类值
+    try {
+      const s = await api('/api/stats');
+      const fill = (sel, items, key) => {
+        const cur = $(sel).value;
+        $(sel).innerHTML = `<option value="">全部</option>` +
+          items.map(d => `<option value="${escapeHtml(d[key] || '')}">${escapeHtml(d[key] || '未分类')} (${d.n})</option>`).join('');
+        $(sel).value = cur;
+      };
+      fill('#file-domain', s.by_domain, 'domain');
+      fill('#file-ftype', s.by_ftype, 'ftype');
+      fill('#file-temp', s.by_temp, 'temp');
+    } catch (_) { /* 下拉填充失败不影响主列表 */ }
+  }
+  setLoading(el, '加载文件索引…');
+  try {
+    const params = new URLSearchParams({ limit: String(FILE_PAGE_SIZE), offset: String(fileOffset) });
+    for (const [k, id] of [['domain','#file-domain'], ['ftype','#file-ftype'], ['temp','#file-temp']]) {
+      const v = $(id).value; if (v) params.set(k, v);
+    }
+    const rows = await api('/api/files?' + params.toString());
+    $('#file-page-info').textContent = `第 ${page} 页 · 本页 ${rows.length} 条`;
+    if (!rows.length) { setEmpty(el, page > 1 ? '没有更多文件了。' : '索引为空，先在「操作」页运行扫描。'); return; }
+    el.innerHTML = `<div class="panel"><div class="table-scroll"><table>
+      <tr><th>路径</th><th>类型</th><th>归属域</th><th>温度</th><th>大小</th><th>置信度</th><th>判定方式</th></tr>
+      ${rows.map(f => `<tr><td class="path">${escapeHtml(f.path)}</td><td>${escapeHtml(f.ftype || '-')}</td>
+        <td>${escapeHtml(f.domain || '-')}</td><td>${escapeHtml(f.temp || '-')}</td><td>${fmtBytes(f.size)}</td>
+        <td>${f.confidence != null ? Number(f.confidence).toFixed(2) : '-'}</td>
+        <td>${escapeHtml(f.classified_by || '-')}${f.is_duplicate ? ' · 重复' : ''}</td></tr>`).join('')}
+      </table></div>
+      <div class="btn-row">
+        <button onclick="loadFiles(${Math.max(1, page - 1)})" ${page <= 1 ? 'disabled' : ''}>上一页</button>
+        <button onclick="loadFiles(${page + 1})" ${rows.length < FILE_PAGE_SIZE ? 'disabled' : ''}>下一页</button>
+      </div></div>`;
   } catch (e) { setError(el, e.message); }
 }
 

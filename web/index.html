@@ -59,6 +59,7 @@
 
   <nav aria-label="主导航">
     <button class="active" data-tab="overview">概览</button>
+    <button data-tab="files">文件浏览</button>
     <button data-tab="search">搜索</button>
     <button data-tab="duplicates">重复文件</button>
     <button data-tab="views">虚拟目录</button>
@@ -80,6 +81,22 @@
       <div class="panel"><h3>按温度层</h3><div id="by-temp"></div></div>
       <div class="panel"><h3>按磁盘卷</h3><div id="by-volume"></div></div>
     </div>
+  </section>
+
+  <!-- 文件浏览 -->
+  <section id="tab-files" class="tab">
+    <div class="panel">
+      <h3>文件索引</h3>
+      <p class="hint">按归属域 / 类型 / 温度筛选，分页浏览已索引文件。只读视图。</p>
+      <div class="toolbar">
+        <select id="file-domain" aria-label="归属域筛选" onchange="loadFiles(1)"><option value="">全部归属域</option></select>
+        <select id="file-ftype" aria-label="类型筛选" onchange="loadFiles(1)"><option value="">全部类型</option></select>
+        <select id="file-temp" aria-label="温度筛选" onchange="loadFiles(1)"><option value="">全部温度</option></select>
+        <button onclick="loadFiles(1)">应用筛选</button>
+        <span class="hint" id="file-page-info"></span>
+      </div>
+    </div>
+    <div id="file-list"></div>
   </section>
 
   <!-- 搜索 -->
