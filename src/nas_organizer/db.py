@@ -122,6 +122,19 @@ CREATE TABLE IF NOT EXISTS recycle_logs (
     action        TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_recycle_stage ON recycle_logs(stage, action);
+
+-- D4 人工反馈学习：关键词 → 归属域/类型的权重，仅调整低置信度分类
+CREATE TABLE IF NOT EXISTS feedback (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    keyword     TEXT NOT NULL,
+    field       TEXT NOT NULL,   -- domain / ftype
+    value       TEXT NOT NULL,
+    hits        INTEGER DEFAULT 1,
+    created_at  REAL NOT NULL,
+    updated_at  REAL NOT NULL,
+    UNIQUE (keyword, field, value)
+);
+CREATE INDEX IF NOT EXISTS idx_feedback_field ON feedback(field, hits);
 """
 
 
@@ -300,6 +313,49 @@ class Database:
     def mark_rolled_back(self, log_id: int) -> None:
         with self.transaction() as conn:
             conn.execute("UPDATE op_logs SET rolled_back=1 WHERE id=?", (log_id,))
+
+    # ---- feedback（D4 反馈学习）----
+
+    def add_feedback(self, keyword: str, field: str, value: str) -> None:
+        """记录一次人工纠正；重复关键词命中次数 +1。field ∈ {domain, ftype}."""
+        if field not in ("domain", "ftype"):
+            raise ValueError("field 必须是 domain 或 ftype")
+        now = time.time()
+        with self.transaction() as conn:
+            conn.execute(
+                """INSERT INTO feedback (keyword, field, value, hits, created_at, updated_at)
+                   VALUES (?, ?, ?, 1, ?, ?)
+                   ON CONFLICT(keyword, field, value) DO UPDATE SET
+                     hits = hits + 1, updated_at = excluded.updated_at""",
+                (keyword.lower().strip(), field, value, now, now),
+            )
+
+    def get_feedback(self, field: str | None = None, limit: int = 200) -> list[dict]:
+        conn = self.connect()
+        if field:
+            rows = conn.execute(
+                "SELECT * FROM feedback WHERE field=? ORDER BY hits DESC, updated_at DESC LIMIT ?",
+                (field, limit),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM feedback ORDER BY hits DESC, updated_at DESC LIMIT ?", (limit,)
+            ).fetchall()
+        return [
+            {
+                "id": int(r["id"]), "keyword": r["keyword"], "field": r["field"],
+                "value": r["value"], "hits": int(r["hits"]),
+                "created_at": float(r["created_at"]), "updated_at": float(r["updated_at"]),
+            }
+            for r in rows
+        ]
+
+    def reset_feedback(self) -> int:
+        """清空全部反馈（可重置），返回删除条数。"""
+        with self.transaction() as conn:
+            count = conn.execute("SELECT COUNT(*) AS n FROM feedback").fetchone()["n"]
+            conn.execute("DELETE FROM feedback")
+            return int(count)
 
     @staticmethod
     def _row_to_file(row: sqlite3.Row) -> FileRecord:

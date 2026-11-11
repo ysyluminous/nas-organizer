@@ -59,6 +59,28 @@ def main(argv: list[str] | None = None) -> int:
     sched_sub.add_parser("run", help="前台运行调度循环（Ctrl+C 停止）")
     sched_sub.add_parser("check", help="校验 cron 表达式（不启动任务）")
 
+    p_fb = sub.add_parser("feedback", help="人工反馈学习（越用越准）")
+    fb_sub = p_fb.add_subparsers(dest="feedback_action", required=True)
+    p_fb_add = fb_sub.add_parser("add", help="记录一次人工纠正")
+    p_fb_add.add_argument("path", help="被纠正文件的路径（抽取关键词）")
+    p_fb_add.add_argument("--field", choices=["domain", "ftype"], required=True)
+    p_fb_add.add_argument("--value", required=True, help="人工指定的归属域或类型")
+    p_fb_list = fb_sub.add_parser("list", help="列出反馈条目")
+    p_fb_list.add_argument("--field", choices=["domain", "ftype"], default=None)
+    p_fb_reset = fb_sub.add_parser("reset", help="清空全部反馈")
+    p_fb_reset.add_argument("--confirm", action="store_true", help="确认清空（必须）")
+
+    p_media = sub.add_parser("media", help="媒体元数据感知（只读建议）")
+    media_sub = p_media.add_subparsers(dest="media_action", required=True)
+    media_sub.add_parser("capability", help="查看 exif/ID3/pHash 依赖可用性")
+    p_photo = media_sub.add_parser("suggest-photos", help="按 exif 日期生成照片归档建议")
+    p_photo.add_argument("--target", required=True, help="归档根目录")
+    p_photo.add_argument("--limit", type=int, default=200)
+    p_music = media_sub.add_parser("suggest-music", help="按 ID3 标签生成音乐归档建议")
+    p_music.add_argument("--target", required=True)
+    p_music.add_argument("--limit", type=int, default=200)
+    media_sub.add_parser("phash-similar", help="感知哈希查找相似图片（只读）")
+
     p_recycle = sub.add_parser("recycle", help="两级回收站管理")
     rec_sub = p_recycle.add_subparsers(dest="recycle_action", required=True)
     rec_sub.add_parser("list", help="列出回收站项目")
@@ -145,6 +167,59 @@ def main(argv: list[str] | None = None) -> int:
             "SELECT volume, COUNT(*) n FROM files WHERE status='active' GROUP BY volume"
         ):
             print(f"  {row[0]}: {row[1]}")
+
+    elif args.command == "feedback":
+        from .feedback import FeedbackLearner
+        learner = FeedbackLearner(config, db)
+        action = args.feedback_action
+        if action == "add":
+            n = learner.learn_from_correction(args.path, args.field, args.value)
+            print(f"[OK] 反馈已记录：{n} 个关键词 → {args.field}={args.value}")
+        elif action == "list":
+            rows = db.get_feedback(field=args.field)
+            if not rows:
+                print("暂无反馈记录")
+            for r in rows:
+                print(f"  [{r['id']}] {r['field']}={r['value']} ← '{r['keyword']}' (命中 {r['hits']})")
+        elif action == "reset":
+            if not args.confirm:
+                print("[拒绝] 清空反馈需要 --confirm")
+            else:
+                print(f"[OK] 已清空 {learner.reset()} 条反馈")
+
+    elif args.command == "media":
+        from .media import MediaOrganizer
+        from .perceptual import PerceptualFinder
+        from .security import PathGuard
+        guard = PathGuard(config)
+        action = args.media_action
+        if action == "capability":
+            caps = MediaOrganizer.capability()
+            caps.update(PerceptualFinder.capability())
+            for k, v in caps.items():
+                print(f"  {k}: {'可用' if v else '不可用（将优雅降级）'}")
+        elif action == "suggest-photos":
+            root = guard.check(args.target, source="cli", action="suggest", write=True)
+            recs = [r for r in db.get_all_active() if (r.ftype or "") == "图片"][:args.limit]
+            items = MediaOrganizer(config).suggest_photos(recs, str(root))
+            print(f"[OK] 照片归档建议 {len(items)} 项（只读，未移动文件）")
+            for it in items[:30]:
+                print(f"  {it['date']}[{it['source']}] {it['src_path']}\n      -> {it['dst_path']}")
+        elif action == "suggest-music":
+            root = guard.check(args.target, source="cli", action="suggest", write=True)
+            recs = [r for r in db.get_all_active() if (r.ftype or "") == "音乐"][:args.limit]
+            items = MediaOrganizer(config).suggest_music(recs, str(root))
+            print(f"[OK] 音乐归档建议 {len(items)} 项（只读，未移动文件）")
+            for it in items[:30]:
+                print(f"  [{it['source']}] {it['src_path']}\n      -> {it['dst_path']}")
+        elif action == "phash-similar":
+            result = PerceptualFinder(config, db).find_similar()
+            print(f"[OK] 感知哈希扫描：{result.get('images_scanned', 0)} 张图片，"
+                  f"{result.get('similar_groups', 0)} 组相似，{result.get('similar_pairs', 0)} 对")
+            for g in result.get("groups", [])[:20]:
+                print(f"  [距离 {g['max_distance']}] {g['paths'][0]}")
+                for p in g["paths"][1:]:
+                    print(f"      ≈ {p}")
 
     elif args.command == "recycle":
         from .recycle import RecycleBin

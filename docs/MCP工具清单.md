@@ -1,7 +1,7 @@
-# MCP 工具清单（46 个原子工具）
+# MCP 工具清单（54 个原子工具）
 
 > `src/nas_organizer/mcp_server.py` 实现，纯标准库 JSON-RPC 2.0 over stdio，无额外依赖。
-> 行为契约见仓库根 [AGENTS.md](../AGENTS.md)。同类对比中 Nasio 26 个、zspace-cli 24 个，本项目 **46 个**。
+> 行为契约见仓库根 [AGENTS.md](../AGENTS.md)。同类对比中 Nasio 26 个、zspace-cli 24 个，本项目 **54 个**（D4 由 46 增至 54）。
 
 ## 1. 启动与认证
 
@@ -20,14 +20,14 @@ docker compose run --rm \
 
 | 场景 | 行为 |
 |---|---|
-| 不设 Token | **只读模式**：35 个只读工具可用，11 个写工具返回"需要授权" |
+| 不设 Token | **只读模式**：41 个只读工具可用，13 个写工具返回"需要授权" |
 | Token 无效 / 过期 | 服务启动即失败，不降级为只读 |
-| Token 有效 | 全部 46 个工具可用 |
-| `execute` / `rollback` / `backup_hot` | 除有效 Token 外，还必须在参数里带 `confirm=true` |
+| Token 有效 | 全部 54 个工具可用 |
+| `execute` / `rollback` / `backup_hot` / `feedback_reset` | 除有效 Token 外，还必须在参数里带 `confirm=true` |
 
 Token 复用 Web 登录体系（PBKDF2 + HMAC 签名），改密后旧 Token 立即失效。
 
-## 2. 只读工具（35 个，无需 Token）
+## 2. 只读工具（41 个，无需 Token）
 
 ### 基础与安全（7）
 
@@ -89,7 +89,18 @@ Token 复用 Web 登录体系（PBKDF2 + HMAC 签名），改密后旧 Token 立
 | `recycle_list` | 列出两级回收站项目 |
 | `recycle_stats` | 回收站各阶段数量与占用字节 |
 
-## 3. 受控写工具（11 个，需 Token）
+### D4 反馈 / AI / 媒体 / 感知哈希（6）
+
+| 工具 | 用途 |
+|---|---|
+| `feedback_list` | 查看人工反馈条目（关键词→域/类型权重） |
+| `ai_status` | 查看可选 AI 兜底开关、provider、依赖可用性 |
+| `media_capability` | 查看 exif / ID3 / pHash 可选依赖是否可用 |
+| `photo_plan_suggest` | 按 exif 拍摄日期生成照片归档建议（只读，不移动） |
+| `music_plan_suggest` | 按 ID3 标签生成音乐归档建议（只读，不移动） |
+| `phash_similar` | 感知哈希查找缩放/压缩后的相似图片，只读 |
+
+## 3. 受控写工具（13 个，需 Token）
 
 | 工具 | 是否需 confirm | 说明 |
 |---|:---:|---|
@@ -104,8 +115,10 @@ Token 复用 Web 登录体系（PBKDF2 + HMAC 签名），改密后旧 Token 立
 | `recycle_promote` | 否 | stage1 超时项提升到 stage2，不删除 |
 | `recycle_restore` | **是** | 还原回收站项目 |
 | `recycle_purge` | **是** | 物理清除 stage2（不可逆），仅 stage2 允许 |
+| `feedback_add` | 否 | 记录一次人工纠正（关键词→域/类型），只写索引库 |
+| `feedback_reset` | **是** | 清空全部人工反馈，必须 `confirm=true` |
 
-> 注意：`scan_start` 等虽标为"写工具"，是因为它们会更新索引库；它们**不改动用户文件**。清除回收站只能清 stage2，stage1 必须先提升。
+> 注意：`scan_start` 等虽标为"写工具"，是因为它们会更新索引库；它们**不改动用户文件**。清除回收站只能清 stage2，stage1 必须先提升。反馈写操作同样只改索引库，AI 默认关闭且失败静默降级。
 
 ## 4. JSON-RPC 示例
 
@@ -140,6 +153,6 @@ Token 复用 Web 登录体系（PBKDF2 + HMAC 签名），改密后旧 Token 立
 
 ## 6. 与 Skill 的关系
 
-- **MCP** 提供原子能力（46 个工具），适合 Agent 编排与跨客户端复用
+- **MCP** 提供原子能力（54 个工具），适合 Agent 编排与跨客户端复用
 - **Skill** 提供工作流（9 个专项 + 1 路由），把工具串成有安全关卡的流程
 - 两者共享同一份 `AGENTS.md` 行为契约与 `PathGuard` 路径边界

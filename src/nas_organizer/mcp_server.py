@@ -27,7 +27,7 @@ from .db import Database
 from .planner import Planner
 from .security import PathGuard, PathViolation
 
-VERSION = "0.3.0"
+VERSION = "0.4.0"
 PROTOCOL_VERSION = "2025-06-18"
 
 
@@ -199,6 +199,24 @@ class MCPServer:
                     handler=lambda a: s._recycle_list(a))
         s._register("recycle_stats", "回收站统计（各阶段数量与占用字节）",
                     handler=lambda a: s._recycle_stats())
+        # ---- 只读：D4 反馈 / AI / 媒体 / 感知哈希 ----
+        s._register("feedback_list", "查看人工反馈学习条目（关键词→域/类型权重）",
+                    {"field": {"type": "string"}, "limit": {"type": "integer", "default": 100}},
+                    handler=lambda a: s._feedback_list(a))
+        s._register("ai_status", "查看可选 AI 兜底是否启用、provider 与依赖可用性",
+                    handler=lambda a: s._ai_status())
+        s._register("media_capability", "查看 exif/ID3/pHash 可选依赖是否可用",
+                    handler=lambda a: s._media_capability())
+        s._register("photo_plan_suggest", "按 exif 拍摄日期生成照片归档建议（只读，不移动）",
+                    {"target_root": {"type": "string"}, "ftype": {"type": "string", "default": "图片"},
+                     "limit": {"type": "integer", "default": 200}},
+                    ["target_root"], handler=lambda a: s._photo_suggest(a))
+        s._register("music_plan_suggest", "按 ID3 标签生成音乐归档建议（只读，不移动）",
+                    {"target_root": {"type": "string"}, "limit": {"type": "integer", "default": 200}},
+                    ["target_root"], handler=lambda a: s._music_suggest(a))
+        s._register("phash_similar", "感知哈希查找相似图片（缩放/压缩同图），只读",
+                    {"limit": {"type": "integer", "default": 50}},
+                    handler=lambda a: s._phash_similar(a))
 
         # ---- 受控写：需要 Token ----
         s._register("scan_start", "扫描配置的卷并建立索引（只读，不改文件）",
@@ -239,6 +257,14 @@ class MCPServer:
         s._register("recycle_purge", "物理清除 stage2；必须 confirm=true（不可逆）",
                     {"confirm": {"type": "boolean"}}, ["confirm"],
                     lambda a: s._recycle_purge(a), write=True, confirm=True)
+        # D4 反馈学习写操作
+        s._register("feedback_add", "记录一次人工纠正（关键词→域/类型），影响后续低置信度分类",
+                    {"path": {"type": "string"}, "field": {"type": "string", "enum": ["domain", "ftype"]},
+                     "value": {"type": "string"}}, ["path", "field", "value"],
+                    lambda a: s._feedback_add(a), write=True)
+        s._register("feedback_reset", "清空全部人工反馈；必须 confirm=true",
+                    {"confirm": {"type": "boolean"}}, ["confirm"],
+                    lambda a: s._feedback_reset(a), write=True, confirm=True)
 
     # ---------- 工具实现：基础 ----------
 
@@ -523,6 +549,60 @@ class MCPServer:
         from .recycle import RecycleBin
         return RecycleBin(self.config, self.db).stats()
 
+    # ---------- 工具实现：D4 只读 ----------
+
+    def _feedback_list(self, args: dict) -> dict:
+        rows = self.db.get_feedback(field=args.get("field"), limit=int(args.get("limit", 100)))
+        return {"enabled": bool(self.config.get("feedback.enabled", True)),
+                "count": len(rows), "items": rows}
+
+    def _ai_status(self) -> dict:
+        enabled = bool(self.config.get("ai.enabled", False))
+        provider = str(self.config.get("ai.provider", "ollama"))
+        threshold = float(self.config.get("ai.threshold", 0.8))
+        available = False
+        if enabled:
+            try:
+                from .ai import build_provider
+                p = build_provider(self.config)
+                available = bool(p and p.available())
+            except Exception:
+                available = False
+        return {"enabled": enabled, "provider": provider, "threshold": threshold,
+                "available": available,
+                "note": "未启用时零依赖加载；仅处理置信度低于阈值的疑难件"}
+
+    def _media_capability(self) -> dict:
+        from .media import MediaOrganizer
+        from .perceptual import PerceptualFinder
+        caps = MediaOrganizer.capability()
+        caps.update(PerceptualFinder.capability())
+        return caps
+
+    def _photo_suggest(self, args: dict) -> dict:
+        from .media import MediaOrganizer
+        root = self.guard.check(args["target_root"], source="mcp", action="suggest", write=True)
+        records = [r for r in self.db.get_all_active()
+                   if (r.ftype or "") == args.get("ftype", "图片")]
+        limit = int(args.get("limit", 200))
+        items = MediaOrganizer(self.config).suggest_photos(records[:limit], str(root))
+        return {"count": len(items), "items": items}
+
+    def _music_suggest(self, args: dict) -> dict:
+        from .media import MediaOrganizer
+        root = self.guard.check(args["target_root"], source="mcp", action="suggest", write=True)
+        records = [r for r in self.db.get_all_active() if (r.ftype or "") == "音乐"]
+        limit = int(args.get("limit", 200))
+        items = MediaOrganizer(self.config).suggest_music(records[:limit], str(root))
+        return {"count": len(items), "items": items}
+
+    def _phash_similar(self, args: dict) -> dict:
+        from .perceptual import PerceptualFinder
+        result = PerceptualFinder(self.config, self.db).find_similar()
+        if "groups" in result:
+            result["groups"] = result["groups"][:int(args.get("limit", 50))]
+        return result
+
     # ---------- 工具实现：受控写 ----------
 
     def _require_confirm(self, args: dict) -> None:
@@ -589,6 +669,21 @@ class MCPServer:
         self._require_confirm(args)
         from .recycle import RecycleBin
         return RecycleBin(self.config, self.db).purge(stage=2, confirm=True)
+
+    def _feedback_add(self, args: dict) -> dict:
+        # 反馈写入只改索引库，不碰用户文件；路径仍需通过白名单校验
+        self.guard.check(args["path"], source="mcp", action="feedback")
+        from .feedback import FeedbackLearner
+        learner = FeedbackLearner(self.config, self.db)
+        count = learner.learn_from_correction(args["path"], args["field"], args["value"])
+        return {"ok": True, "keywords_recorded": count, "field": args["field"],
+                "value": args["value"]}
+
+    def _feedback_reset(self, args: dict) -> dict:
+        self._require_confirm(args)
+        from .feedback import FeedbackLearner
+        removed = FeedbackLearner(self.config, self.db).reset()
+        return {"ok": True, "removed": removed}
 
     # ---------- JSON-RPC 调度 ----------
 

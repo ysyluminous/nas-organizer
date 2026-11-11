@@ -28,6 +28,22 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "strict": True,
         "audit_log": "data/security_audit.jsonl",
     },
+    # D4 人工反馈学习：默认开启，规则优先，只影响低置信度文件
+    "feedback": {"enabled": True, "max_keywords": 12},
+    # D4 可选 AI 兜底：默认关闭，关闭时零依赖、行为与之前完全一致
+    "ai": {
+        "enabled": False,
+        "provider": "ollama",
+        "base_url": "http://127.0.0.1:11434",
+        "model": "qwen2.5:3b",
+        "timeout": 15,
+        "threshold": 0.8,          # 仅处理置信度低于此值的疑难件
+        "domains": ["个人", "工作", "生活", "资源"],
+    },
+    # D4 媒体元数据感知：无可选依赖时优雅降级，绝不报错中断主流程
+    "media": {"exif_enabled": True, "id3_enabled": True},
+    # D4 感知哈希相似图片：默认开启但只在图片组内计算
+    "perceptual": {"enabled": True, "threshold": 10, "hash_size": 8},
     "web": {"host": "0.0.0.0", "port": 8765},
 }
 

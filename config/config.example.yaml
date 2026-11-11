@@ -41,6 +41,34 @@ classification:
     provider: fasttext
     model_path: data/models/domain.ftz
 
+# D4 人工反馈学习：从 Web/CLI 复核纠正中本地学习，越用越准
+# 规则优先，只在低置信度（原本仅凭扩展名归「资源」）时兜底
+feedback:
+  enabled: true
+  max_keywords: 12         # 每条纠正抽取的关键词上限
+
+# D4 可选 AI 兜底：默认关闭，关闭时零依赖、行为与之前完全一致
+# 启用后只处理置信度低于 threshold 的疑难件；断网/无 Ollama 时自动降级为人工复核
+ai:
+  enabled: false
+  provider: ollama
+  base_url: http://127.0.0.1:11434
+  model: qwen2.5:3b
+  timeout: 15
+  threshold: 0.8
+  domains: [个人, 工作, 生活, 资源]
+
+# D4 媒体元数据感知：可选依赖（Pillow / mutagen）缺失时优雅降级
+media:
+  exif_enabled: true       # 照片按 exif 拍摄日期归档，无 exif 回落 mtime
+  id3_enabled: true        # 音乐按 ID3 标签整理，缺标签回退文件名
+
+# D4 感知哈希相似图片：纯 Python DCT，无重依赖；只读发现，不移动文件
+perceptual:
+  enabled: true
+  threshold: 10            # 汉明距离 ≤ 此值视为相似
+  hash_size: 8
+
 dedupe:
   head_size: 65536
   tail_size: 65536

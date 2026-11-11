@@ -86,6 +86,11 @@ class Classifier:
         self.folder_aliases = self._load_folder_aliases()
         self.model_enabled = bool(config.get("classification.model.enabled", False))
         self.threshold = float(config.get("classification.model.threshold", 0.8))
+        # D4：反馈学习（规则优先，只影响低置信度）与可选 AI 兜底（默认关）
+        from .ai import build_provider
+        from .feedback import FeedbackLearner
+        self.feedback = FeedbackLearner(config, db)
+        self.ai = build_provider(config)
         # 热卷来自配置中 role=hot 的挂载点，不再硬编码任何盘符
         self.hot_volumes = {
             str(v.get("name", "")) for v in (config.get("volumes", []) or [])
@@ -205,14 +210,30 @@ class Classifier:
             return ftype, self._by_domain_path(path_lower), self._by_temp(record), 0.9, "keyword"
         if domain:
             return ftype, domain, self._by_temp(record), 0.85, "keyword"
+
+        # 4. D4 反馈学习：仅在规则/关键词都未命中归属时，用人工纠正过的关键词兜底。
+        #    规则优先——上面所有高置信度分支都已提前返回，这里只影响原本会落到「资源」的疑难件。
+        fb = self.feedback.suggest(f"{name_lower} {path_lower}", "domain")
+        if fb:
+            fb_domain, fb_hits = fb
+            # 命中次数越多权重越高，但上限 0.8，仍低于任何规则判定
+            conf = min(0.8, 0.6 + 0.05 * fb_hits)
+            return ftype, fb_domain, self._by_temp(record), conf, "feedback"
+        fb_type = self.feedback.suggest(f"{name_lower} {path_lower}", "ftype")
+        if fb_type and ftype == "其他":
+            fb_ftype, fb_hits = fb_type
+            conf = min(0.8, 0.6 + 0.05 * fb_hits)
+            return fb_ftype, "资源", self._by_temp(record), conf, "feedback"
+
         if ftype != "其他":
             return ftype, "资源", self._by_temp(record), 0.7, "ext"
 
-        # 4. 模型兜底（未启用时归为其他）
+        # 5. 模型兜底（未启用时归为其他）
         if self.model_enabled:
             model_domain, conf = self._by_model(record)
             if conf >= self.threshold:
                 return ftype or "其他", model_domain, self._by_temp(record), conf, "model"
+            # 低置信度或调用失败 → 保留资源/低置信度，进入人工复核队列
             return ftype or "其他", "资源", self._by_temp(record), conf, "model"
         return "其他", "资源", self._by_temp(record), 0.3, "ext"
 
@@ -253,6 +274,11 @@ class Classifier:
         return "冷"
 
     def _by_model(self, record: FileRecord) -> tuple[str, float]:
-        """模型兜底，当前为占位实现，返回低置信度."""
-        # TODO: 集成 fastText / TF-IDF 模型
-        return ("资源", 0.0)
+        """可选 AI 兜底；未配置 provider 或调用失败时返回低置信度，主流程不受影响。"""
+        if self.ai is None or not self.ai.available():
+            return ("资源", 0.0)
+        result = self.ai.classify(record.filename, record.path, record.ext)
+        if not result:
+            # 断网/无 Ollama/非法响应：静默降级
+            return ("资源", 0.0)
+        return result

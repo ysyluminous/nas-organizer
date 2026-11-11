@@ -169,8 +169,27 @@ bash scripts/install-skills.sh   # 安装到 ~/.workbuddy/skills/
 - [x] D1：MCP 工具 + 应用级白名单 + Agent policy（[进度计划](docs/进度计划.md)）
 - [x] D2：205 文件夹别名 / 定时调度 / 323 种扩展名
 - [x] D3：两级回收站 / 12 类专项清理 / 备份审计 / 批量归类（MCP 增至 46）
-- [ ] D4–D7：本地模型、媒体识别、虚拟目录、PWA 与超越验收
+- [x] D4：反馈学习 / 可选 Ollama 兜底 / exif·ID3 媒体识别 / pHash 相似图片（MCP 增至 54）
+- [ ] D5–D7：虚拟目录、复核台、PWA 与超越验收
 - [ ] 真机多品牌联调
+
+## D4 快速体验
+
+```bash
+# 人工纠正（越用越准）：把某文件归入「个人」，抽取关键词供低置信度文件兜底
+python -m nas_organizer feedback add "/nas/云账户账单明细.pdf" --field domain --value 个人
+python -m nas_organizer feedback list
+
+# 媒体感知（只读建议，不移动文件；Pillow/mutagen 缺失时优雅降级）
+python -m nas_organizer media capability
+python -m nas_organizer media suggest-photos --target /write/album
+python -m nas_organizer media suggest-music --target /write/music
+python -m nas_organizer media phash-similar
+
+# 可选 AI 兜底：默认关闭；在 config.yaml 设 ai.enabled=true 后仅处理疑难件
+```
+
+AI 未启用时零依赖、行为与 D3 完全一致；断网或无 Ollama 时自动降级为人工复核队列。详见 [进度计划 D4 报告](docs/进度计划.md)。
 
 ## License
 
