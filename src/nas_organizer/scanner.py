@@ -9,6 +9,7 @@ from typing import Callable
 from .config import Config
 from .db import Database
 from .models import FileRecord
+from .security import PathGuard, PathViolation
 
 
 class Scanner:
@@ -19,6 +20,7 @@ class Scanner:
         self.db = db
         self.exclude_dirs = set(config.get("scanner.exclude_dirs", []))
         self.workers = int(config.get("scanner.workers", 4))
+        self.guard = PathGuard(config)
         self._progress: Callable[[int, int], None] | None = None
 
     def on_progress(self, callback: Callable[[int, int], None]) -> None:
@@ -30,7 +32,13 @@ class Scanner:
         results: dict[str, int] = {}
         for vol in self.config.get("volumes", []):
             name = vol["name"]
-            root = Path(vol["path"])
+            try:
+                root = self.guard.check(
+                    vol["path"], source="scanner", action="scan"
+                )
+            except PathViolation as exc:
+                print(f"[安全] 跳过越界扫描源: {exc}", flush=True)
+                continue
             if not root.exists():
                 print(f"[WARN] 卷 {name} 路径不存在: {root}，跳过")
                 continue

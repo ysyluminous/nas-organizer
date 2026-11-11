@@ -6,6 +6,7 @@ from pathlib import Path
 
 from .config import Config
 from .db import Database
+from .security import PathGuard, PathViolation
 
 
 class BackupManager:
@@ -14,14 +15,23 @@ class BackupManager:
     def __init__(self, config: Config, db: Database):
         self.config = config
         self.db = db
+        self.guard = PathGuard(config)
 
     def backup_hot(self) -> dict:
         """把热数据同步到备份目标."""
         cfg = self.config.get("backup.hot", {})
         if not cfg.get("enabled", False):
             return {"skipped": True, "reason": "disabled"}
-        source = Path(cfg.get("source", "/write/16t2"))
-        target = Path(cfg.get("target", "/backup/hot"))
+        try:
+            source = self.guard.check(
+                cfg.get("source", "/write/16t2"), source="backup", action="backup"
+            )
+            target = self.guard.check(
+                cfg.get("target", "/backup/hot"),
+                source="backup", action="backup", write=True,
+            )
+        except PathViolation as exc:
+            return {"skipped": True, "reason": str(exc)}
         max_age = int(cfg.get("max_age_days", 90))
         if not source.exists():
             return {"skipped": True, "reason": "source missing"}

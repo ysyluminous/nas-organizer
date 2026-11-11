@@ -7,6 +7,7 @@ from pathlib import Path
 from .config import Config
 from .db import Database
 from .models import FileRecord, Plan, PlanItem
+from .security import PathGuard, PathViolation
 
 # 每个写入目标卷对应的归属域
 VOLUME_DOMAIN_MAP = {
@@ -26,6 +27,7 @@ class Planner:
         self.db = db
         self.target_root = config.get("backup.hot.source", "/write/16t2")
         self.conflict_policy = config.get("planner.conflict_policy", "rename")
+        self.guard = PathGuard(config)
 
     def build_plan(
         self,
@@ -54,6 +56,11 @@ class Planner:
         for rec in filtered:
             dst = self._target_path(rec)
             if dst is None or dst == rec.path:
+                continue
+            try:
+                self.guard.check(rec.path, source="planner", action="plan")
+                self.guard.check(dst, source="planner", action="plan", write=True)
+            except PathViolation:
                 continue
             item = PlanItem(
                 file_id=rec.id,

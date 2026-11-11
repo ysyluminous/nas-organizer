@@ -8,6 +8,7 @@ from pathlib import Path
 from .config import Config
 from .db import Database
 from .models import OpLog
+from .security import PathGuard, PathViolation
 
 
 class Executor:
@@ -18,6 +19,7 @@ class Executor:
         self.db = db
         self.recycle_root = Path(config.get("executor.recycle_root", "data/recycle"))
         self.recycle_root.mkdir(parents=True, exist_ok=True)
+        self.guard = PathGuard(config)
 
     def execute_plan(self, plan_id: int, limit: int = 0) -> dict:
         """执行计划中 pending 的条目."""
@@ -44,8 +46,19 @@ class Executor:
         return stats
 
     def _execute_item(self, item_id: int, src: str, dst: str) -> str:
-        src_path = Path(src)
-        dst_path = Path(dst)
+        if not dst:
+            self._set_item_status(item_id, "failed", "目标路径为空")
+            return "failed"
+        try:
+            src_path = self.guard.check(
+                src, source="executor", action="execute", write=True
+            )
+            dst_path = self.guard.check(
+                dst, source="executor", action="execute", write=True
+            )
+        except PathViolation as exc:
+            self._set_item_status(item_id, "failed", str(exc))
+            return "failed"
 
         if not src_path.exists():
             self._set_item_status(item_id, "failed", "源文件不存在")

@@ -21,6 +21,11 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "scanner": {"workers": 4, "exclude_dirs": ["#recycle", "@eaDir", ".git", "node_modules"]},
     "backup": {"hot": {"enabled": False}, "cold": {"enabled": False}},
     "auth": {"token_ttl_seconds": 28800, "max_failed_attempts": 5},
+    "security": {
+        "allowed_paths": [],
+        "strict": True,
+        "audit_log": "data/security_audit.jsonl",
+    },
     "web": {"host": "0.0.0.0", "port": 8765},
 }
 

@@ -25,7 +25,9 @@ NAS Organizer 把这些事变成一条**可审计、可回滚、需登录**的�
 | **规则优先，模型兜底** | 90% 分类由路径规则 + 扩展名 + 关键词完成；轻量模型只处理疑难件 |
 | **只读扫描 + 受控写入** | 扫描挂载点 `:ro`，只有执行器持有 `:rw` 目录 |
 | **认证保护** | 全站 API 需登录；PBKDF2 密码哈希、签名 Token、登录限流 |
+| **应用级白名单** | `allowed_paths` 防路径穿越与软链逃逸，所有越界尝试留审计日志 |
 | **安全执行** | 复制 → 校验 → 删除，每步写操作日志，支持一键回滚 |
+| **Agent 友好** | 38 个 MCP 原子工具 + 10 个 WorkBuddy Skill，行为边界写在 `AGENTS.md` |
 | **配置驱动、平台无关** | 所有路径通过 `.env` 与 YAML 注入，换 NAS 不用改代码 |
 
 ## 功能
@@ -83,6 +85,8 @@ docker logs -f nas-organizer
 | [技术方案](docs/技术方案.md) | 架构、模块、认证设计、分类模型、执行流程 |
 | [分类规则](docs/分类规则.md) | 规则表、判定优先级、置信度 |
 | [数据库设计](docs/数据库设计.md) | 表结构、索引、查询示例 |
+| [AGENTS.md](AGENTS.md) | Agent / MCP / Skill 的行为契约与安全边界 |
+| [MCP 工具清单](docs/MCP工具清单.md) | 38 个原子工具、认证模型、JSON-RPC 示例、客户端配置 |
 | [同类工具对比](docs/同类工具对比.md) | 与 7 个同类项目的加权评分对比：我们领先在哪、落后在哪 |
 | [进度计划](docs/进度计划.md) | 42 项同类优点按 ROI 排序 + 7 天超越路线与可验证验收清单 |
 | [案例：绿联 NAS 现状诊断](docs/案例-绿联NAS现状诊断.md) | 作者真实环境的摸底数据与分层方案（仅供参考，非部署前提） |
@@ -114,17 +118,37 @@ python -m nas_organizer.cli serve
 
 CLI 不需要登录认证（依赖宿主机权限），Web 控制台始终需要登录。
 
-## WorkBuddy Skill
+## MCP 与 WorkBuddy Skill
 
-`skills/nas-organizer/SKILL.md` 是配套的 WorkBuddy 技能，安装后可用自然语言驱动：
+**MCP（38 个原子工具，同类最多）**：
+
+```bash
+PYTHONPATH=src NAS_ORGANIZER_TOKEN=<Web 登录 Token> python -m nas_organizer.mcp_server
+```
+
+- 不设 Token → 只读模式（31 个工具可用），写工具返回"需要授权"
+- `plan_execute` / `rollback_last` / `backup_hot` 另需 `confirm=true`
+- 工具清单与客户端配置见 [docs/MCP工具清单.md](docs/MCP工具清单.md)
+
+**10 个 WorkBuddy Skill**（1 路由 + 9 专项）：
+
+```bash
+bash scripts/install-skills.sh   # 安装到 ~/.workbuddy/skills/
+```
+
+`nas-report` / `dedup-finder` / `file-sorter` / `photo-organizer` / `music-organizer` /
+`work-organizer` / `download-cleaner` / `backup-auditor` / `migration-review`
+
+安装后可用自然语言驱动：
 
 ```
-帮我扫描一下 NAS 上的重复文件
+帮我体检一下 NAS，看看哪个盘快满了
+找重复文件，先出清单别删
 生成迁移计划，先别执行
-看看分类结果，把工作类电子书单独列出来
+把工作类电子书单独列出来
 ```
 
-安装方式：把 `skills/nas-organizer` 目录复制到 `~/.workbuddy/skills/` 下。
+所有 Agent 行为必须遵守仓库根 [AGENTS.md](AGENTS.md)。
 
 ## 项目状态
 
@@ -132,9 +156,12 @@ CLI 不需要登录认证（依赖宿主机权限），Web 控制台始终需要
 - [x] 核心模块（扫描/分类/查重/计划/执行/备份）
 - [x] 认证与安全（PBKDF2 / 签名 Token / 限流 / 危险操作确认）
 - [x] Web 控制台（登录页、统计、重复报告、计划、改密）
-- [x] CLI 与 WorkBuddy Skill
+- [x] CLI 与 10 个 WorkBuddy Skill
 - [x] 通用多平台挂载与 6 个品牌安装文档
-- [ ] 模型兜底（fastText 训练与集成）
+- [x] D1：38 个 MCP 工具 + 应用级白名单 + Agent policy（[进度计划](docs/进度计划.md)）
+- [ ] D2：文件夹别名 / 定时调度 / 255 种扩展名
+- [ ] D3：两级回收站 / 专项清理工具集
+- [ ] D4–D7：本地模型、媒体识别、虚拟目录、PWA 与超越验收
 - [ ] 真机多品牌联调
 
 ## License

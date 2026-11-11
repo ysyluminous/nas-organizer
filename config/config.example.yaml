@@ -81,6 +81,15 @@ auth:
   token_ttl_seconds: 28800   # 登录有效期 8 小时
   max_failed_attempts: 5     # 连续失败 5 次后临时锁定
 
+# 应用级路径白名单：容器挂载隔离之上的第二层防护
+# 留空时自动从 volumes / write_targets / data 目录推导，兼容旧配置
+security:
+  allowed_paths: []
+  # - /nas/8T1
+  # - /write/16t2
+  strict: true                        # true=越界拒绝；false=仅审计不拦截（仅调试用）
+  audit_log: data/security_audit.jsonl
+
 web:
   # 建议绑定 127.0.0.1 并通过反代 + HTTPS 访问；需要局域网直连才用 0.0.0.0
   host: 0.0.0.0
