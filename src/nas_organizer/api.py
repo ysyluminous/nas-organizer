@@ -30,16 +30,17 @@ _DOCS_KW = (
     {"docs_url": None, "redoc_url": None, "openapi_url": None}
 )
 
-app = FastAPI(title="NAS Organizer", version="0.2.0", **_DOCS_KW)
+app = FastAPI(title="NAS Organizer", version="0.7.0", **_DOCS_KW)
 _config: Config | None = None
 _db: Database | None = None
 _auth: AuthManager | None = None
+_ext_mounted: bool = False  # Round A：扩展路由幂等挂载守卫（测试会多次 setup）
 
 PUBLIC_PATHS = {"/api/auth/login", "/api/auth/status"}
 
 
 def setup(config: Config, db: Database) -> FastAPI:
-    global _config, _db, _auth
+    global _config, _db, _auth, _ext_mounted
     _config = config
     _db = db
     db.init_schema()
@@ -47,8 +48,15 @@ def setup(config: Config, db: Database) -> FastAPI:
     data_dir = config.resolve(config.get("database.path", "data/nas_organizer.db")).parent
     _auth = AuthManager(data_dir, config.get("auth", {}) or {})
 
+    # Round A：扩展能力路由（搜索/清理/回收站/审计/媒体/插件/调度/反馈）
+    from .api_ext import init as ext_init, router as ext_router
+    ext_init(config, db)
+    if not _ext_mounted:
+        app.include_router(ext_router)
+        _ext_mounted = True
+
     web_dir = Path(__file__).parent.parent.parent / "web"
-    if web_dir.exists():
+    if web_dir.exists() and not any(getattr(r, "path", "") == "/static" for r in app.routes):
         app.mount("/static", StaticFiles(directory=str(web_dir)), name="static")
     return app
 

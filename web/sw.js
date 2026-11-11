@@ -3,7 +3,7 @@
  * 避免把带认证的文件索引/统计缓存到客户端造成信息泄露。
  * 网络优先：在线时总拿最新的静态资源，离线时用缓存壳。
  */
-const CACHE = 'nas-organizer-shell-v1';
+const CACHE = 'nas-organizer-shell-v2';
 const SHELL = ['/', '/static/style.css', '/static/app.js', '/static/icon.svg', '/manifest.webmanifest'];
 
 self.addEventListener('install', (event) => {

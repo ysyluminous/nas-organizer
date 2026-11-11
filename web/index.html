@@ -19,7 +19,7 @@
     <label for="login-password">管理员密码</label>
     <input type="password" id="login-password" placeholder="请输入密码" autocomplete="current-password" autofocus>
     <button id="login-btn" class="primary" onclick="doLogin()">登录</button>
-    <p id="login-error" class="error"></p>
+    <p id="login-error" class="error" role="alert"></p>
     <p class="login-tip">首次启动时，初始密码打印在容器日志中，也保存在 data/INITIAL_PASSWORD.txt。登录后请立即修改。</p>
   </div>
 </div>
@@ -38,7 +38,7 @@
       <button class="primary" onclick="doChangePassword()">确认修改</button>
       <button onclick="closePwdModal()">取消</button>
     </div>
-    <p id="pwd-error" class="error"></p>
+    <p id="pwd-error" class="error" role="alert"></p>
     <p class="login-tip">修改后所有已登录会话立即失效，需要使用新密码重新登录。</p>
   </div>
 </div>
@@ -51,19 +51,27 @@
     </div>
     <div class="header-actions">
       <span id="user-label" class="user-label"></span>
+      <button id="theme-btn" class="icon-btn" onclick="toggleTheme()" title="切换深色/浅色" aria-label="切换主题">◐</button>
       <button onclick="openPwdModal()">安全设置</button>
       <button onclick="doLogout()">退出</button>
     </div>
   </header>
 
-  <nav>
+  <nav aria-label="主导航">
     <button class="active" data-tab="overview">概览</button>
+    <button data-tab="search">搜索</button>
     <button data-tab="duplicates">重复文件</button>
+    <button data-tab="views">虚拟目录</button>
     <button data-tab="plans">迁移计划</button>
+    <button data-tab="cleanup">清理发现</button>
+    <button data-tab="recycle">回收站</button>
     <button data-tab="review">复核台</button>
+    <button data-tab="media">媒体与能力</button>
+    <button data-tab="tasks">任务与调度</button>
     <button data-tab="actions">操作</button>
   </nav>
 
+  <!-- 概览 -->
   <section id="tab-overview" class="tab active">
     <div class="cards" id="stat-cards"></div>
     <div class="grid-2">
@@ -74,19 +82,76 @@
     </div>
   </section>
 
+  <!-- 搜索 -->
+  <section id="tab-search" class="tab">
+    <div class="panel">
+      <h3>全文搜索</h3>
+      <p class="hint">基于 SQLite FTS5，中文按 2-gram 分词（"报表"可命中"财务报表"）。只读索引，不移动任何文件。</p>
+      <div class="toolbar">
+        <input type="search" id="search-q" class="grow" placeholder="输入文件名关键词，如：财务报表 / 周杰伦 / S01E02" onkeydown="if(event.key==='Enter')loadSearch()">
+        <button class="primary" onclick="loadSearch()">搜索</button>
+        <button onclick="loadSearchStats()">索引状态</button>
+        <button class="danger" onclick="reindex()" title="重建索引（需确认）">重建索引</button>
+      </div>
+      <p id="search-stats" class="hint"></p>
+    </div>
+    <div id="search-list"></div>
+  </section>
+
+  <!-- 重复文件 -->
   <section id="tab-duplicates" class="tab">
     <div class="toolbar"><button onclick="loadDuplicates()">刷新</button></div>
     <div id="dup-list"></div>
   </section>
 
+  <!-- 虚拟目录 -->
+  <section id="tab-views" class="tab">
+    <div class="toolbar">
+      <button onclick="loadViews()">刷新</button>
+      <button class="danger" onclick="autoTag()" title="按域/类型/温度/年份自动打标（需确认）">自动打标</button>
+      <span class="hint">同一文件可属于多个视图，源文件零改动。</span>
+    </div>
+    <div id="view-stats" class="hint"></div>
+    <div id="view-list"></div>
+  </section>
+
+  <!-- 迁移计划 -->
   <section id="tab-plans" class="tab">
     <div class="toolbar">
       <button onclick="loadPlans()">刷新</button>
-      <button onclick="createPlan()">生成计划</button>
+      <button class="primary" onclick="createPlan()">生成计划</button>
     </div>
     <div id="plan-list"></div>
   </section>
 
+  <!-- 清理发现 -->
+  <section id="tab-cleanup" class="tab">
+    <div class="panel">
+      <h3>清理候选发现</h3>
+      <p class="hint warning">只读发现，绝不删除任何文件。清理动作请生成计划并确认后执行。</p>
+      <div class="toolbar">
+        <select id="cleanup-kind"><option value="">全部类型</option></select>
+        <button class="primary" onclick="loadCleanup()">扫描发现</button>
+        <span class="hint" id="cleanup-summary"></span>
+      </div>
+    </div>
+    <div id="cleanup-list"></div>
+  </section>
+
+  <!-- 回收站 -->
+  <section id="tab-recycle" class="tab">
+    <div class="toolbar">
+      <button onclick="loadRecycle()">刷新</button>
+      <select id="recycle-stage" onchange="loadRecycle()">
+        <option value="">全部阶段</option><option value="1">阶段1 · 隔离</option><option value="2">阶段2 · 待清除</option>
+      </select>
+      <span class="hint" id="recycle-stats"></span>
+    </div>
+    <p class="hint">还原与物理清除属于高危操作，仅通过 CLI / MCP 执行并强制二次确认；Web 端只提供只读视图。</p>
+    <div id="recycle-list"></div>
+  </section>
+
+  <!-- 复核台 -->
   <section id="tab-review" class="tab">
     <div class="toolbar">
       <button onclick="loadReview()">刷新待复核</button>
@@ -98,25 +163,56 @@
     <div id="review-history"></div>
   </section>
 
-  <section id="tab-actions" class="tab">
+  <!-- 媒体与能力 -->
+  <section id="tab-media" class="tab">
     <div class="panel">
-      <h3>维护操作</h3>
-      <p class="hint">扫描、分类、查重会修改索引，不会动文件本身。</p>
-      <div class="btn-row">
-        <button onclick="post('/api/scan',{},'扫描')">扫描建索引</button>
-        <button onclick="post('/api/classify',{},'分类')">重新分类</button>
-        <button onclick="post('/api/dedupe',{},'查重')">重复检测</button>
+      <h3>可选能力探测</h3>
+      <p class="hint">可选依赖缺失时自动降级，不影响核心流程。绿色=可用，灰色=未启用/未安装。</p>
+      <div id="capability-grid" class="cap-grid"></div>
+    </div>
+    <div class="panel">
+      <h3>相似内容（只读）</h3>
+      <div class="toolbar">
+        <button onclick="loadSimilar('phash')">相似图片（pHash）</button>
+        <button onclick="loadSimilar('video')">相似视频（关键帧）</button>
       </div>
-      <h3>危险操作</h3>
-      <p class="hint warning">执行计划会真实移动文件，回滚会撤销最近操作。两者都需二次确认，且全程写操作日志。</p>
-      <div class="btn-row">
-        <input type="number" id="rollback-limit" value="10" min="1" title="回滚条数">
-        <button class="danger" onclick="rollback()">回滚最近操作</button>
+      <div id="similar-list" class="hint">尚未扫描。</div>
+    </div>
+  </section>
+
+  <!-- 任务与调度 -->
+  <section id="tab-tasks" class="tab">
+    <div class="toolbar"><button onclick="loadTasks()">刷新</button></div>
+    <div id="task-list"></div>
+    <h3>定时任务</h3>
+    <p class="hint">cron 调度默认全关，且只跑只读任务（扫描/分类/查重/备份审计）。启用需在 config.yaml 中配置。</p>
+    <div id="schedule-list"></div>
+  </section>
+
+  <!-- 操作 -->
+  <section id="tab-actions" class="tab">
+    <div class="grid-2">
+      <div class="panel">
+        <h3>维护操作</h3>
+        <p class="hint">扫描、分类、查重会修改索引，不会动文件本身。</p>
+        <div class="btn-row">
+          <button onclick="post('/api/scan',{},'扫描')">扫描建索引</button>
+          <button onclick="post('/api/classify',{},'分类')">重新分类</button>
+          <button onclick="post('/api/dedupe',{},'查重')">重复检测</button>
+        </div>
+      </div>
+      <div class="panel">
+        <h3>危险操作</h3>
+        <p class="hint warning">执行计划会真实移动文件，回滚会撤销最近操作。两者都需二次确认，且全程写操作日志。</p>
+        <div class="btn-row">
+          <input type="number" id="rollback-limit" value="10" min="1" title="回滚条数" aria-label="回滚条数">
+          <button class="danger" onclick="rollback()">回滚最近操作</button>
+        </div>
       </div>
     </div>
   </section>
 
-  <div id="toast"></div>
+  <div id="toast" role="status" aria-live="polite"></div>
 </div>
 
 <script src="/static/app.js"></script>
