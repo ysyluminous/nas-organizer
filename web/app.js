@@ -564,6 +564,16 @@ async function loadTasks() {
       ? `<div class="panel"><div class="table-scroll"><table><tr><th>配置</th></tr>
          ${jobs.map(j => `<tr><td><code>${escapeHtml(JSON.stringify(j))}</code></td></tr>`).join('')}</table></div></div>`
       : '<p class="hint">未配置定时任务。</p>';
+    // 操作审计时间线
+    const ops = await api('/api/audit/operations?limit=100');
+    $('#op-timeline').innerHTML = ops.operations.length
+      ? `<div class="panel"><p class="hint">共 ${ops.total} 条操作记录（显示最近 ${ops.operations.length} 条）</p>
+         <div class="table-scroll"><table><tr><th>时间</th><th>计划</th><th>动作</th><th>源 → 目标</th><th>状态</th></tr>
+         ${ops.operations.map(o => `<tr><td>${fmtTime(o.executed_at)}</td><td>${escapeHtml(o.plan || '-')}</td>
+           <td>${escapeHtml(o.action)}</td><td class="path">${escapeHtml(o.src)} → ${escapeHtml(o.dst)}</td>
+           <td><span class="badge ${o.rolled_back ? 'badge-failed' : 'badge-done'}">${o.rolled_back ? '已回滚' : '已执行'}</span></td></tr>`).join('')}
+         </table></div></div>`
+      : '<p class="hint">暂无文件操作记录。</p>';
   } catch (e) { setError(el, e.message); }
 }
 

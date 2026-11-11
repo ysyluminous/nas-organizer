@@ -36,7 +36,7 @@ _db: Database | None = None
 _auth: AuthManager | None = None
 _ext_mounted: bool = False  # Round A：扩展路由幂等挂载守卫（测试会多次 setup）
 
-PUBLIC_PATHS = {"/api/auth/login", "/api/auth/status"}
+PUBLIC_PATHS = {"/api/auth/login", "/api/auth/status", "/api/health"}
 
 
 def setup(config: Config, db: Database) -> FastAPI:
@@ -139,6 +139,12 @@ class ReviewDecisionRequest(BaseModel):
     value: str
     note: str | None = None
     learn: bool = True
+
+
+@app.get("/api/health")
+def health():
+    """公开健康检查：只暴露服务状态与版本，不泄露路径、文件数或任何凭据。"""
+    return {"status": "ok", "service": "nas-organizer", "version": "0.7.1"}
 
 
 @app.get("/api/auth/status")

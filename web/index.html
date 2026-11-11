@@ -204,6 +204,9 @@
     <h3>定时任务</h3>
     <p class="hint">cron 调度默认全关，且只跑只读任务（扫描/分类/查重/备份审计）。启用需在 config.yaml 中配置。</p>
     <div id="schedule-list"></div>
+    <h3>操作审计时间线</h3>
+    <p class="hint">每次真实文件操作都记录源/目标、SHA-256 与回滚状态，形成可追溯的安全执行证据链。</p>
+    <div id="op-timeline"></div>
   </section>
 
   <!-- 操作 -->

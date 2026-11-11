@@ -197,3 +197,31 @@ def feedback_list(field: str | None = None, limit: int = 100):
 def schedule_list():
     from .scheduler import Scheduler
     return {"jobs": Scheduler(_config(), _dbx()).describe()}
+
+
+@router.get("/audit/operations")
+def operations_timeline(limit: int = 100, offset: int = 0):
+    """操作审计时间线（只读）：把安全执行闭环（执行→校验→回滚）变成可查看的证据链。"""
+    conn = _dbx().connect()
+    rows = conn.execute(
+        """SELECT o.id, o.plan_item_id, o.action, o.src_path, o.dst_path,
+                  o.sha256, o.size, o.executed_at, o.rolled_back,
+                  p.name AS plan_name
+           FROM op_logs o LEFT JOIN plan_items pi ON pi.id=o.plan_item_id
+           LEFT JOIN plans p ON p.id=pi.plan_id
+           ORDER BY o.executed_at DESC LIMIT ? OFFSET ?""",
+        (min(limit, 500), max(offset, 0)),
+    ).fetchall()
+    total = conn.execute("SELECT COUNT(*) n FROM op_logs").fetchone()["n"]
+    return {
+        "total": total,
+        "operations": [
+            {
+                "id": r["id"], "plan": r["plan_name"], "action": r["action"],
+                "src": r["src_path"], "dst": r["dst_path"],
+                "size": r["size"], "sha256": r["sha256"],
+                "executed_at": r["executed_at"], "rolled_back": bool(r["rolled_back"]),
+            }
+            for r in rows
+        ],
+    }

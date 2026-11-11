@@ -32,6 +32,7 @@ READ_ENDPOINTS = [
     "/api/recycle", "/api/recycle/stats", "/api/audit/backup",
     "/api/media/capability", "/api/plugins/capability",
     "/api/phash/similar", "/api/video/similar", "/api/feedback", "/api/schedule",
+    "/api/audit/operations",
 ]
 
 # 会写索引但不碰用户文件的端点：无 confirm 必须 400
@@ -54,8 +55,11 @@ def check_all():
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
         client, password, db = build_client(Path(d))
         try:
-            # 1. 公开接口
+            # 1. 公开接口（含新增健康检查，供 Docker healthcheck 使用）
             assert client.get("/api/auth/status").status_code == 200
+            health = client.get("/api/health")
+            assert health.status_code == 200 and health.json()["status"] == "ok", health.text
+            assert "version" in health.json()
             login = client.post("/api/auth/login", json={"password": password})
             assert login.status_code == 200, login.text
             headers = {"Authorization": "Bearer " + login.json()["token"]}
