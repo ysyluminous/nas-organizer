@@ -187,6 +187,18 @@ class MCPServer:
                     lambda a: s._scan_state(a["volume"]))
         s._register("list_rules", "查看分类规则条目数量（类型/域/温度）",
                     handler=lambda a: s._rules())
+        # ---- 只读：D3 清理发现 / 备份审计 / 回收站 ----
+        s._register("cleanup_discover", "只读扫描 12 类清理候选（空文件/临时/种子/陈旧压缩包等），不删除",
+                    {"roots": {"type": "array", "items": {"type": "string"}},
+                     "kinds": {"type": "array", "items": {"type": "string"}}}, ["roots"],
+                    handler=lambda a: s._cleanup_discover(a))
+        s._register("backup_audit", "备份审计四项检查（存在性/版本/陈旧/冲突），只读",
+                    handler=lambda a: s._backup_audit())
+        s._register("recycle_list", "列出两级回收站项目",
+                    {"stage": {"type": "integer"}, "limit": {"type": "integer", "default": 100}},
+                    handler=lambda a: s._recycle_list(a))
+        s._register("recycle_stats", "回收站统计（各阶段数量与占用字节）",
+                    handler=lambda a: s._recycle_stats())
 
         # ---- 受控写：需要 Token ----
         s._register("scan_start", "扫描配置的卷并建立索引（只读，不改文件）",
@@ -211,6 +223,22 @@ class MCPServer:
         s._register("backup_hot", "热数据备份到目标目录；必须 confirm=true",
                     {"confirm": {"type": "boolean"}}, ["confirm"],
                     lambda a: s._backup(a), write=True, confirm=True)
+        # D3 批量与回收站写操作
+        s._register("plan_batch", "批量归类：按字段生成多目录计划（不执行移动）",
+                    {"group_by": {"type": "string", "default": "domain"},
+                     "name_prefix": {"type": "string"},
+                     "limit": {"type": "integer", "default": 0}},
+                    handler=lambda a: s._plan_batch(a), write=True)
+        s._register("recycle_promote", "stage1 超时项提升到 stage2（不删除）",
+                    {"days": {"type": "integer"}},
+                    handler=lambda a: s._recycle_promote(a), write=True)
+        s._register("recycle_restore", "还原回收站项目；必须 confirm=true",
+                    {"item_id": {"type": "integer"}, "confirm": {"type": "boolean"}},
+                    ["item_id", "confirm"],
+                    lambda a: s._recycle_restore(a), write=True, confirm=True)
+        s._register("recycle_purge", "物理清除 stage2；必须 confirm=true（不可逆）",
+                    {"confirm": {"type": "boolean"}}, ["confirm"],
+                    lambda a: s._recycle_purge(a), write=True, confirm=True)
 
     # ---------- 工具实现：基础 ----------
 
@@ -473,6 +501,28 @@ class MCPServer:
             }
         return result
 
+    def _cleanup_discover(self, args: dict) -> dict:
+        from .cleanup import CleanupFinder
+        finder = CleanupFinder(self.config, self.db)
+        report = finder.discover(args.get("roots", []), args.get("kinds"))
+        return {"scanned_dirs": report.scanned_dirs, "by_kind": report.by_kind(),
+                "total_bytes": report.total_bytes(),
+                "candidates": [c.__dict__ for c in report.candidates[:500]]}
+
+    def _backup_audit(self) -> dict:
+        from .audit import BackupAuditor
+        return BackupAuditor(self.config, self.db).audit().summary()
+
+    def _recycle_list(self, args: dict) -> dict:
+        from .recycle import RecycleBin
+        rb = RecycleBin(self.config, self.db)
+        return {"items": rb.list_items(stage=args.get("stage"),
+                                       limit=int(args.get("limit", 100)))}
+
+    def _recycle_stats(self) -> dict:
+        from .recycle import RecycleBin
+        return RecycleBin(self.config, self.db).stats()
+
     # ---------- 工具实现：受控写 ----------
 
     def _require_confirm(self, args: dict) -> None:
@@ -515,6 +565,30 @@ class MCPServer:
         self._require_confirm(args)
         from .backup import BackupManager
         return BackupManager(self.config, self.db).backup_hot()
+
+    def _plan_batch(self, args: dict) -> dict:
+        plans = Planner(self.config, self.db).build_batch_plans(
+            group_by=str(args.get("group_by", "domain")),
+            name_prefix=args.get("name_prefix"),
+            limit=int(args.get("limit", 0)),
+        )
+        return {"plans": plans, "count": len(plans),
+                "total_items": sum(p["items"] for p in plans)}
+
+    def _recycle_promote(self, args: dict) -> dict:
+        from .recycle import RecycleBin
+        return RecycleBin(self.config, self.db).promote(args.get("days"))
+
+    def _recycle_restore(self, args: dict) -> dict:
+        self._require_confirm(args)
+        from .recycle import RecycleBin
+        return RecycleBin(self.config, self.db).restore(
+            int(args["item_id"]), confirm=True)
+
+    def _recycle_purge(self, args: dict) -> dict:
+        self._require_confirm(args)
+        from .recycle import RecycleBin
+        return RecycleBin(self.config, self.db).purge(stage=2, confirm=True)
 
     # ---------- JSON-RPC 调度 ----------
 

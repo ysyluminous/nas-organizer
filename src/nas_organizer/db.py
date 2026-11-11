@@ -108,6 +108,20 @@ CREATE TABLE IF NOT EXISTS scheduler_logs (
     started_at   REAL NOT NULL,
     duration_sec REAL NOT NULL
 );
+
+-- 两级回收站审计：stage 1=隔离(可还原) 2=待清除 0=已还原 -1=已清除
+CREATE TABLE IF NOT EXISTS recycle_logs (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    original_path TEXT NOT NULL,
+    stored_path   TEXT NOT NULL,
+    stage         INTEGER NOT NULL,
+    removed_at    REAL NOT NULL,
+    promoted_at   REAL,
+    size          INTEGER NOT NULL,
+    reason        TEXT,
+    action        TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_recycle_stage ON recycle_logs(stage, action);
 """
 
 

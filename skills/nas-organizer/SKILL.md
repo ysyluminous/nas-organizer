@@ -34,10 +34,10 @@ python -m nas_organizer.mcp_server   # 需设置 PYTHONPATH=src
 docker compose run --rm -e NAS_ORGANIZER_TOKEN=<token> nas-organizer python -m nas_organizer.mcp_server
 ```
 
-- 只读工具：无需 Token
-- 写工具（scan/classify/dedupe/plan_create/execute/rollback/backup）：需 `NAS_ORGANIZER_TOKEN`
-- 危险操作额外需要 `confirm=true`
-- 共 38 个原子工具，完整清单见 `docs/MCP工具清单.md`
+- 只读工具（含 cleanup_discover / backup_audit / recycle_list 等）：无需 Token
+- 写工具（scan/classify/dedupe/plan_create/plan_batch/execute/rollback/backup/recycle_*）：需 `NAS_ORGANIZER_TOKEN`
+- 危险操作（execute/rollback/backup/recycle_restore/recycle_purge）额外需要 `confirm=true`
+- 共 46 个原子工具，完整清单见 `docs/MCP工具清单.md`
 
 ### 方式 B：CLI（本机或容器）
 

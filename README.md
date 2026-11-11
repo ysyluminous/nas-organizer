@@ -27,7 +27,8 @@ NAS Organizer 把这些事变成一条**可审计、可回滚、需登录**的�
 | **认证保护** | 全站 API 需登录；PBKDF2 密码哈希、签名 Token、登录限流 |
 | **应用级白名单** | `allowed_paths` 防路径穿越与软链逃逸，所有越界尝试留审计日志 |
 | **安全执行** | 复制 → 校验 → 删除，每步写操作日志，支持一键回滚 |
-| **Agent 友好** | 38 个 MCP 原子工具 + 10 个 WorkBuddy Skill，行为边界写在 `AGENTS.md` |
+| **两级回收站** | 源文件先进隔离区（可还原），超时提升待清除区；物理清除必须 `confirm=true` |
+| **Agent 友好** | 46 个 MCP 原子工具 + 10 个 WorkBuddy Skill，行为边界写在 `AGENTS.md` |
 | **配置驱动、平台无关** | 所有路径通过 `.env` 与 YAML 注入，换 NAS 不用改代码 |
 | **定时调度，默认全关** | 5 段 cron 只触发只读任务，危险操作永不自动执行，每次触发写审计日志 |
 
@@ -39,9 +40,12 @@ NAS Organizer 把这些事变成一条**可审计、可回滚、需登录**的�
 - **重复检测**：大小分组 → 头尾哈希 → 全量 SHA-256 三级漏斗，快速定位重复
 - **迁移计划**：生成"应该移动到哪里"的计划表，支持冲突重命名
 - **热数据备份**：rsync 把活跃文件同步到指定目标
+- **备份审计**：存在性 / 版本轮换 / 陈旧性 / 覆盖冲突四项只读检查
+- **清理发现器**：12 类垃圾候选（空文件/临时/.part/种子/陈旧压缩包/重复命名…），只出清单不删除
+- **批量归类**：一次按域/类型/温度拆成多个计划，1200 文件实测有进度日志
 - **定时调度**：可选 cron 定时跑 scan/classify/dedupe/backup/verify，默认全关且只触发只读任务
 - **Web 控制台**：登录认证、统计概览、重复报告、计划预览、批量确认、操作日志与回滚
-- **CLI**：所有能力都有命令行入口，方便脚本化与定时调度（`schedule list/run/check`）
+- **CLI**：所有能力都有命令行入口（`schedule` / `recycle` / `plan --batch` 等），方便脚本化
 
 ## 快速开始（三步）
 
@@ -90,7 +94,7 @@ docker logs -f nas-organizer
 | [定时调度（示例配置）](config/schedule.example.yaml) | cron 配置、只读白名单、默认全关说明 |
 | [数据库设计](docs/数据库设计.md) | 表结构、索引、查询示例 |
 | [AGENTS.md](AGENTS.md) | Agent / MCP / Skill 的行为契约与安全边界 |
-| [MCP 工具清单](docs/MCP工具清单.md) | 38 个原子工具、认证模型、JSON-RPC 示例、客户端配置 |
+| [MCP 工具清单](docs/MCP工具清单.md) | 46 个原子工具、认证模型、JSON-RPC 示例、客户端配置 |
 | [同类工具对比](docs/同类工具对比.md) | 与 7 个同类项目的加权评分对比：我们领先在哪、落后在哪 |
 | [进度计划](docs/进度计划.md) | 42 项同类优点按 ROI 排序 + 7 天超越路线与可验证验收清单 |
 | [案例：绿联 NAS 现状诊断](docs/案例-绿联NAS现状诊断.md) | 作者真实环境的摸底数据与分层方案（仅供参考，非部署前提） |
@@ -124,14 +128,14 @@ CLI 不需要登录认证（依赖宿主机权限），Web 控制台始终需要
 
 ## MCP 与 WorkBuddy Skill
 
-**MCP（38 个原子工具，同类最多）**：
+**MCP（46 个原子工具，同类最多）**：
 
 ```bash
 PYTHONPATH=src NAS_ORGANIZER_TOKEN=<Web 登录 Token> python -m nas_organizer.mcp_server
 ```
 
-- 不设 Token → 只读模式（31 个工具可用），写工具返回"需要授权"
-- `plan_execute` / `rollback_last` / `backup_hot` 另需 `confirm=true`
+- 不设 Token → 只读模式（35 个工具可用），写工具返回"需要授权"
+- `plan_execute` / `rollback_last` / `backup_hot` / `recycle_restore` / `recycle_purge` 另需 `confirm=true`
 - 工具清单与客户端配置见 [docs/MCP工具清单.md](docs/MCP工具清单.md)
 
 **10 个 WorkBuddy Skill**（1 路由 + 9 专项）：
@@ -162,9 +166,9 @@ bash scripts/install-skills.sh   # 安装到 ~/.workbuddy/skills/
 - [x] Web 控制台（登录页、统计、重复报告、计划、改密）
 - [x] CLI 与 10 个 WorkBuddy Skill
 - [x] 通用多平台挂载与 6 个品牌安装文档
-- [x] D1：38 个 MCP 工具 + 应用级白名单 + Agent policy（[进度计划](docs/进度计划.md)）
-- [ ] D2：文件夹别名 / 定时调度 / 255 种扩展名
-- [ ] D3：两级回收站 / 专项清理工具集
+- [x] D1：MCP 工具 + 应用级白名单 + Agent policy（[进度计划](docs/进度计划.md)）
+- [x] D2：205 文件夹别名 / 定时调度 / 323 种扩展名
+- [x] D3：两级回收站 / 12 类专项清理 / 备份审计 / 批量归类（MCP 增至 46）
 - [ ] D4–D7：本地模型、媒体识别、虚拟目录、PWA 与超越验收
 - [ ] 真机多品牌联调
 

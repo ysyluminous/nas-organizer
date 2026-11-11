@@ -8,6 +8,7 @@ from pathlib import Path
 from .config import Config
 from .db import Database
 from .models import OpLog
+from .recycle import RecycleBin
 from .security import PathGuard, PathViolation
 
 
@@ -20,6 +21,7 @@ class Executor:
         self.recycle_root = Path(config.get("executor.recycle_root", "data/recycle"))
         self.recycle_root.mkdir(parents=True, exist_ok=True)
         self.guard = PathGuard(config)
+        self.recycle = RecycleBin(config, db)
 
     def execute_plan(self, plan_id: int, limit: int = 0) -> dict:
         """执行计划中 pending 的条目."""
@@ -83,9 +85,8 @@ class Executor:
                 return "failed"
             # 3. 重命名临时文件为目标
             tmp_path.rename(dst_path)
-            # 4. 源文件移入回收区（不物理删除）
-            recycle = self._to_recycle(src_path)
-            shutil.move(str(src_path), str(recycle))
+            # 4. 源文件移入两级回收站 stage1（不物理删除，可还原）
+            recycle = Path(self.recycle.quarantine(src_path, reason=f"plan {item_id} move"))
             # 5. 记录日志
             self.db.log_op(OpLog(
                 plan_item_id=item_id,

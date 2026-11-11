@@ -87,6 +87,20 @@ class Scheduler:
         self._running: set[str] = set()
         self._lock = threading.Lock()
         self.jobs = self._load_jobs()
+        # 兼容存量数据库：旧库缺表时自动补建，无需用户重建库
+        conn = self.db.connect()
+        conn.execute(
+            """CREATE TABLE IF NOT EXISTS scheduler_logs (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                job_name     TEXT NOT NULL,
+                command      TEXT NOT NULL,
+                status       TEXT NOT NULL,
+                detail       TEXT,
+                started_at   REAL NOT NULL,
+                duration_sec REAL NOT NULL
+            )"""
+        )
+        conn.commit()
 
     def _load_jobs(self) -> list[dict[str, Any]]:
         if not self.config.get("schedule.enabled", False):

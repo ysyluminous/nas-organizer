@@ -30,6 +30,8 @@ def main(argv: list[str] | None = None) -> int:
     p_plan.add_argument("--temp", default=None)
     p_plan.add_argument("--duplicates", action="store_true")
     p_plan.add_argument("--limit", type=int, default=0)
+    p_plan.add_argument("--batch", choices=["domain", "ftype", "temp", "domain_ftype"],
+                        default=None, help="批量归类：按字段拆成多个计划")
 
     p_show = sub.add_parser("show-plan", help="预览计划")
     p_show.add_argument("plan_id", type=int)
@@ -56,6 +58,18 @@ def main(argv: list[str] | None = None) -> int:
     sched_sub.add_parser("list", help="列出已启用的定时任务")
     sched_sub.add_parser("run", help="前台运行调度循环（Ctrl+C 停止）")
     sched_sub.add_parser("check", help="校验 cron 表达式（不启动任务）")
+
+    p_recycle = sub.add_parser("recycle", help="两级回收站管理")
+    rec_sub = p_recycle.add_subparsers(dest="recycle_action", required=True)
+    rec_sub.add_parser("list", help="列出回收站项目")
+    rec_sub.add_parser("stats", help="回收站统计")
+    p_promote = rec_sub.add_parser("promote", help="stage1 超时项提升到 stage2")
+    p_promote.add_argument("--days", type=int, default=None)
+    p_restore = rec_sub.add_parser("restore", help="还原项目到原路径")
+    p_restore.add_argument("item_id", type=int)
+    p_restore.add_argument("--confirm", action="store_true", help="确认还原")
+    p_purge = rec_sub.add_parser("purge", help="清除 stage2（不可逆）")
+    p_purge.add_argument("--confirm", action="store_true", help="确认清除（必须）")
 
     args = parser.parse_args(argv)
     config = Config.load(args.config)
@@ -84,11 +98,23 @@ def main(argv: list[str] | None = None) -> int:
 
     elif args.command == "plan":
         from .planner import Planner
-        plan = Planner(config, db).build_plan(
-            name=args.name, domain=args.domain, ftype=args.ftype,
-            temp=args.temp, only_duplicates=args.duplicates, limit=args.limit,
-        )
-        print(f"[OK] 计划已生成: ID={plan.id} 共 {plan.item_count} 项")
+        planner = Planner(config, db)
+        if args.batch:
+            def _progress(done: int, total: int, label: str) -> None:
+                print(f"[批量归类进度] {done}/{total} ({label})")
+            results = planner.build_batch_plans(
+                group_by=args.batch, name_prefix=args.name,
+                limit=args.limit, progress=_progress,
+            )
+            print(f"[OK] 批量归类完成: {len(results)} 个计划")
+            for r in results:
+                print(f"  [{r['plan_id']}] {r['name']}: {r['items']} 项")
+        else:
+            plan = planner.build_plan(
+                name=args.name, domain=args.domain, ftype=args.ftype,
+                temp=args.temp, only_duplicates=args.duplicates, limit=args.limit,
+            )
+            print(f"[OK] 计划已生成: ID={plan.id} 共 {plan.item_count} 项")
 
     elif args.command == "show-plan":
         from .planner import Planner
@@ -119,6 +145,27 @@ def main(argv: list[str] | None = None) -> int:
             "SELECT volume, COUNT(*) n FROM files WHERE status='active' GROUP BY volume"
         ):
             print(f"  {row[0]}: {row[1]}")
+
+    elif args.command == "recycle":
+        from .recycle import RecycleBin
+        rb = RecycleBin(config, db)
+        action = args.recycle_action
+        if action == "list":
+            items = rb.list_items()
+            if not items:
+                print("回收站为空")
+            for it in items:
+                print(f"  [{it['id']}] stage{it['stage']} {it['original_path']}")
+        elif action == "stats":
+            print("[OK] 回收站统计:", rb.stats())
+        elif action == "promote":
+            print("[OK] 提升:", rb.promote(args.days))
+        elif action == "restore":
+            result = rb.restore(args.item_id, confirm=args.confirm)
+            print("[OK]" if result.get("ok") else "[拒绝]", result)
+        elif action == "purge":
+            result = rb.purge(stage=2, confirm=args.confirm)
+            print("[OK]" if result.get("ok") else "[拒绝]", result)
 
     elif args.command == "schedule":
         from .scheduler import Scheduler

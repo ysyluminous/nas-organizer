@@ -1,7 +1,7 @@
-# MCP 工具清单（38 个原子工具）
+# MCP 工具清单（46 个原子工具）
 
 > `src/nas_organizer/mcp_server.py` 实现，纯标准库 JSON-RPC 2.0 over stdio，无额外依赖。
-> 行为契约见仓库根 [AGENTS.md](../AGENTS.md)。同类对比中 Nasio 26 个、zspace-cli 24 个，本项目 **38 个**。
+> 行为契约见仓库根 [AGENTS.md](../AGENTS.md)。同类对比中 Nasio 26 个、zspace-cli 24 个，本项目 **46 个**。
 
 ## 1. 启动与认证
 
@@ -20,14 +20,14 @@ docker compose run --rm \
 
 | 场景 | 行为 |
 |---|---|
-| 不设 Token | **只读模式**：31 个只读工具可用，7 个写工具返回"需要授权" |
+| 不设 Token | **只读模式**：35 个只读工具可用，11 个写工具返回"需要授权" |
 | Token 无效 / 过期 | 服务启动即失败，不降级为只读 |
-| Token 有效 | 全部 38 个工具可用 |
+| Token 有效 | 全部 46 个工具可用 |
 | `execute` / `rollback` / `backup_hot` | 除有效 Token 外，还必须在参数里带 `confirm=true` |
 
 Token 复用 Web 登录体系（PBKDF2 + HMAC 签名），改密后旧 Token 立即失效。
 
-## 2. 只读工具（31 个，无需 Token）
+## 2. 只读工具（35 个，无需 Token）
 
 ### 基础与安全（7）
 
@@ -80,7 +80,16 @@ Token 复用 Web 登录体系（PBKDF2 + HMAC 签名），改密后旧 Token 立
 | `list_scan_states` | 各卷最近扫描状态 |
 | `get_scan_state` | 单卷扫描状态 |
 
-## 3. 受控写工具（7 个，需 Token）
+### 清理 / 审计 / 回收站（4）
+
+| 工具 | 用途 |
+|---|---|
+| `cleanup_discover` | 只读扫描 12 类清理候选（空文件/临时/种子/陈旧压缩包等），不删除 |
+| `backup_audit` | 备份审计四项检查（存在性/版本/陈旧/冲突），只读 |
+| `recycle_list` | 列出两级回收站项目 |
+| `recycle_stats` | 回收站各阶段数量与占用字节 |
+
+## 3. 受控写工具（11 个，需 Token）
 
 | 工具 | 是否需 confirm | 说明 |
 |---|:---:|---|
@@ -91,8 +100,12 @@ Token 复用 Web 登录体系（PBKDF2 + HMAC 签名），改密后旧 Token 立
 | `plan_execute` | **是** | 执行迁移，必须 `confirm=true` |
 | `rollback_last` | **是** | 回滚最近操作 |
 | `backup_hot` | **是** | 热数据备份 |
+| `plan_batch` | 否 | 批量归类生成多目录计划，不执行移动 |
+| `recycle_promote` | 否 | stage1 超时项提升到 stage2，不删除 |
+| `recycle_restore` | **是** | 还原回收站项目 |
+| `recycle_purge` | **是** | 物理清除 stage2（不可逆），仅 stage2 允许 |
 
-> 注意：`scan_start` 等虽标为"写工具"，是因为它们会更新索引库；它们**不改动用户文件**。
+> 注意：`scan_start` 等虽标为"写工具"，是因为它们会更新索引库；它们**不改动用户文件**。清除回收站只能清 stage2，stage1 必须先提升。
 
 ## 4. JSON-RPC 示例
 
@@ -127,6 +140,6 @@ Token 复用 Web 登录体系（PBKDF2 + HMAC 签名），改密后旧 Token 立
 
 ## 6. 与 Skill 的关系
 
-- **MCP** 提供原子能力（38 个工具），适合 Agent 编排与跨客户端复用
+- **MCP** 提供原子能力（46 个工具），适合 Agent 编排与跨客户端复用
 - **Skill** 提供工作流（9 个专项 + 1 路由），把工具串成有安全关卡的流程
 - 两者共享同一份 `AGENTS.md` 行为契约与 `PathGuard` 路径边界
