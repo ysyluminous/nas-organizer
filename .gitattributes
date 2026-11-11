@@ -1,0 +1,3 @@
+# 统一使用 LF 行尾
+# 关键：docker/entrypoint.sh 若变成 CRLF，Linux 容器内会报 "\r: command not found"
+* text=auto eol=lf
