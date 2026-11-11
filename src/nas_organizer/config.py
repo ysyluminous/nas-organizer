@@ -14,6 +14,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "classification": {
         "type_rules": "config/type_rules.yaml",
         "domain_rules": "config/domain_rules.yaml",
+        "folder_aliases": "config/folder_aliases.yaml",
         "temperature_rules": "config/temperature_rules.yaml",
         "model": {"enabled": False, "threshold": 0.8},
     },
@@ -21,6 +22,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "scanner": {"workers": 4, "exclude_dirs": ["#recycle", "@eaDir", ".git", "node_modules"]},
     "backup": {"hot": {"enabled": False}, "cold": {"enabled": False}},
     "auth": {"token_ttl_seconds": 28800, "max_failed_attempts": 5},
+    "schedule": {"enabled": False, "config": "config/schedule.yaml"},
     "security": {
         "allowed_paths": [],
         "strict": True,

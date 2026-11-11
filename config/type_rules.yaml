@@ -1,64 +1,35 @@
-# 文件类型规则：扩展名 → 类型
-音乐:
-  - flac
-  - mp3
-  - wav
-  - m4a
-  - aac
-  - ogg
-  - ape
-  - wma
-  - opus
-视频:
-  - mp4
-  - mkv
-  - avi
-  - mov
-  - rmvb
-  - wmv
-  - flv
-  - webm
-  - m4v
-  - ts
-图书:
-  - epub
-  - mobi
-  - azw3
-  - djvu
-文档:
-  - doc
-  - docx
-  - xls
-  - xlsx
-  - ppt
-  - pptx
-  - csv
-  - md
-  - pdf
-  - txt
-图片:
-  - jpg
-  - jpeg
-  - png
-  - gif
-  - bmp
-  - webp
-  - heic
-  - tiff
-  - svg
-软件:
-  - exe
-  - msi
-  - apk
-  - dmg
-  - deb
-  - rpm
-  - appimage
-压缩包:
-  - zip
-  - rar
-  - 7z
-  - tar
-  - gz
-  - bz2
-  - xz
+# 文件类型规则：扩展名 → 类型（15 类 / 323 条唯一扩展名）
+# 用法：classification.type_rules 指向本文件；自由增删，无需改代码。
+# 规则：扩展名小写不带点、同一扩展名只出现一次；命中即返回；
+#       未命中的扩展名归入「其他」并在 stats.unknown_ext 计数上报。
+# 提示：pdf/txt 默认归「文档」，如需按「图书」处理，在 domain_rules.yaml 用路径规则覆盖。
+音乐: [flac, mp3, wav, m4a, aac, ogg, oga, ape, wma, opus, aiff, aif, alac, mp2, mpc, amr, mid, midi, mka, dsf, dff, wv, caf, spx]
+
+视频: [mp4, mkv, avi, mov, rmvb, wmv, flv, webm, m4v, ts, m2ts, mpg, mpeg, 3gp, 3g2, ogv, vob, divx, xvid, f4v, asf, swf, mts, m2v, rm, mp4v, h264, h265, hevc, dv, y4m, qt]
+
+图书: [epub, mobi, azw, azw3, djvu, djv, prc, pdb, fb2, lit, lrf, chm, iba, kfx]
+
+漫画: [cbr, cbz, cbt, cb7, cba, cb5]
+
+文档: [doc, docx, docm, dot, dotx, xls, xlsx, xlsb, xlsm, ppt, pptx, pptm, pps, ppsx, pot, odt, ods, odp, odg, odb, rtf, tex, latex, md, markdown, txt, pdf, xmind, pages, numbers, wps, et, dps, csv, tsv, eml, msg, ics, vcf, pst, ost, mbox]
+
+图片: [jpg, jpeg, jpe, jfif, png, gif, bmp, webp, heic, heif, tiff, tif, svg, svgz, ico, raw, cr2, nef, arw, dng, tga, qoi, avif, jxl, dib, exr, hdr, pcx]
+
+软件: [exe, msi, apk, dmg, deb, rpm, appimage, xapk, ipa, pkg, jar, war, ear, bat, scr, snap, flatpak, app, cmd, vbs, reg]
+
+压缩包: [zip, rar, 7z, tar, gz, bz2, xz, zst, tgz, tbz2, txz, lz, lzma, cab, arj, ace, lzh, zoo, br, lz4]
+
+代码: [py, pyc, js, jsx, tsx, java, c, h, cpp, hpp, cc, cs, go, rs, rb, php, swift, kt, kts, scala, sh, bash, zsh, fish, lua, pl, sql, css, scss, less, vue, svelte, dart, groovy, r, m, mm, ipynb]
+
+数据: [db, sqlite, sqlite3, parquet, avro, orc, hdf5, h5, npy, npz, pkl, pickle, mat, sav, dta, sas7bdat, dbf, arrow, feather, json, yaml, yml, toml, jsonl, xml]
+
+字体: [ttf, otf, woff, woff2, eot, ttc, otc, fon, pfb, pfa, bdf, pcf, afm]
+
+系统镜像: [iso, img, vhd, vhdx, vmdk, qcow2, qcow, ova, ovf, vdi, rom, fw, bin, vmx]
+
+设计: [ai, eps, cdr, sketch, fig, xd, dwg, dxf, stl, obj, fbx, blend, 3ds, dae, indd, psd, xcf, vd]
+
+字幕: [srt, ass, ssa, vtt, sub, idx, sup, pgs, smi, ttml, sbv, lrc]
+
+临时与杂项: [tmp, temp, bak, swp, old, part, lock, cache, log, ini, cfg, conf, torrent, nfo, url, pid]
+

@@ -48,6 +48,14 @@ def main(argv: list[str] | None = None) -> int:
     p_serve = sub.add_parser("serve", help="启动 Web 控制台")
     p_serve.add_argument("--host", default=None)
     p_serve.add_argument("--port", type=int, default=None)
+    p_serve.add_argument("--with-scheduler", action="store_true",
+                         help="同时启动定时调度器（默认关闭，需在配置中启用）")
+
+    p_sched = sub.add_parser("schedule", help="定时调度器管理")
+    sched_sub = p_sched.add_subparsers(dest="schedule_action", required=True)
+    sched_sub.add_parser("list", help="列出已启用的定时任务")
+    sched_sub.add_parser("run", help="前台运行调度循环（Ctrl+C 停止）")
+    sched_sub.add_parser("check", help="校验 cron 表达式（不启动任务）")
 
     args = parser.parse_args(argv)
     config = Config.load(args.config)
@@ -112,15 +120,53 @@ def main(argv: list[str] | None = None) -> int:
         ):
             print(f"  {row[0]}: {row[1]}")
 
+    elif args.command == "schedule":
+        from .scheduler import Scheduler
+        if args.schedule_action == "check":
+            from .scheduler import parse_cron
+            # 校验配置中所有 cron；无配置时给出提示
+            scheduler = Scheduler(config, db)
+            jobs = scheduler.describe()
+            print(f"[OK] 调度配置校验通过，共 {len(jobs)} 个启用任务")
+        elif args.schedule_action == "list":
+            scheduler = Scheduler(config, db)
+            jobs = scheduler.describe()
+            if not jobs:
+                print("未启用任何定时任务（默认安全状态）。")
+            for job in jobs:
+                print(f"  {job['name']}: {job['command']} [{job['cron']}]")
+        elif args.schedule_action == "run":
+            scheduler = Scheduler(config, db)
+            if not scheduler.start():
+                print("[WARN] 没有启用的任务，调度器未启动")
+            else:
+                try:
+                    while True:
+                        import time as _t
+                        _t.sleep(1)
+                except KeyboardInterrupt:
+                    print("\n[scheduler] 收到中断，正在停止...")
+                finally:
+                    scheduler.stop()
+
     elif args.command == "serve":
         import uvicorn
         from .api import setup
         app = setup(config, db)
-        uvicorn.run(
-            app,
-            host=args.host or config.get("web.host", "0.0.0.0"),
-            port=args.port or config.get("web.port", 8765),
-        )
+        scheduler = None
+        if args.with_scheduler:
+            from .scheduler import Scheduler
+            scheduler = Scheduler(config, db)
+            scheduler.start()
+        try:
+            uvicorn.run(
+                app,
+                host=args.host or config.get("web.host", "0.0.0.0"),
+                port=args.port or config.get("web.port", 8765),
+            )
+        finally:
+            if scheduler:
+                scheduler.stop()
 
     db.close()
     return 0

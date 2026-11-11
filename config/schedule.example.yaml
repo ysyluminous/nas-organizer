@@ -1,0 +1,38 @@
+# 定时调度配置示例
+# 用法：复制为 config/schedule.yaml 并在 config.yaml 中设置
+#   schedule:
+#     config: config/schedule.yaml
+#     enabled: true
+# 默认：无 schedule.yaml 或 enabled=false 时，不启动任何任务、零后台线程。
+#
+# cron 格式（5 段）：分 时 日 月 周
+#   *    每分钟
+#   */5  每 5 分钟
+#   0    整点
+#   0 3 * * *    每天 03:00
+#   0 3 * * 1    每周一 03:00
+#   30 2 1 * *   每月 1 日 02:30
+#
+# 安全约束：调度器只触发 dry-run 类任务（scan/classify/dedupe/backup/verify）。
+# 绝不自动执行 plan_execute / rollback / 删除——写操作永远需要人工确认。
+enabled: true
+jobs:
+  - name: nightly-scan
+    command: scan
+    cron: "0 3 * * *"
+    enabled: true
+
+  - name: dedupe-weekly
+    command: dedupe
+    cron: "0 4 * * 1"
+    enabled: true
+
+  - name: hot-backup-daily
+    command: backup
+    cron: "0 5 * * *"
+    enabled: false   # 备份涉及写入，默认关闭；确认配置后再开
+
+  - name: cold-verify-monthly
+    command: verify
+    cron: "0 6 1 * *"
+    enabled: false

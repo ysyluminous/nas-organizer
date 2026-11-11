@@ -1,0 +1,95 @@
+# 文件夹别名 → 标准归类（跨品牌通用，135+ 个别名）
+# 命中方式：路径的「目录段」精确匹配（不扫描文件名，避免误伤「电影项目资料」这类目录）。
+# 匹配时忽略大小写、空格、下划线、连字符；例如 "TV Shows" / "tv_shows" 均命中。
+# 命中后直接确定归属域与类型，置信度高于关键词、低于用户自定义 path_rules。
+# 提示：canonical 只是展示用的标准名，不是搬迁目标——搬迁目标仍由 planner 生成。
+groups:
+  - canonical: 影视/电影
+    domain: 生活
+    ftype: 视频
+    names: [电影, 影片, 大片, 高清电影, 蓝光电影, 4K电影, 电影收藏, 影音, 视听,
+             movies, movie, films, film, cinema, bluray, blu-ray, 4k movies]
+
+  - canonical: 影视/剧集
+    domain: 生活
+    ftype: 视频
+    names: [电视剧, 剧集, 连续剧, 美剧, 日剧, 韩剧, 国产剧, 综艺, 纪录片,
+             tv shows, tvshows, tv-series, series, drama, episodes, sitcom]
+
+  - canonical: 音乐
+    domain: 生活
+    ftype: 音乐
+    names: [音乐, 歌曲, 无损音乐, 专辑, 唱片, 金曲, 我喜欢的音乐, 音乐库, 车载音乐,
+             music, songs, song, albums, album, audio, flac, mp3]
+
+  - canonical: 照片
+    domain: 生活
+    ftype: 图片
+    names: [照片, 相册, 相片, 摄影, 图库, 老照片, 全家福, 旅游照片, 手机照片,
+             photos, photo, pictures, images, image, gallery, dcim, camera]
+
+  - canonical: 图书
+    domain: 资源
+    ftype: 图书
+    names: [图书, 书籍, 电子书, 书库, 藏书, 古籍, 书单, 读物, 小说, 漫画书,
+             books, book, ebooks, ebook, library, novel, comics]
+
+  - canonical: 文档
+    domain: 工作
+    ftype: 文档
+    names: [文档, 文件, 资料, 公文, 报告, 合同, 报表, 档案, 工作文档, 表格,
+             documents, document, docs, doc, files, reports, report, contracts]
+
+  - canonical: 工作
+    domain: 工作
+    ftype: ~
+    names: [工作, 项目, 项目资料, 办公, 业务, 客户, 财务, 审计, 招标, 代码, 源码,
+             work, project, projects, office, business, finance, src, source]
+
+  - canonical: 个人
+    domain: 个人
+    ftype: ~
+    names: [个人, 私人, 证件, 私密, 日记, 笔记, 简历, 个人文件,
+             personal, private, myself, diary, notes, resume]
+
+  - canonical: 课程资源
+    domain: 资源
+    ftype: ~
+    names: [课程, 教程, 网课, 培训, 讲座, 学习资料, 教学, 视频教程,
+             courses, course, tutorials, tutorial, lessons, training]
+
+  - canonical: 软件
+    domain: 资源
+    ftype: 软件
+    names: [软件, 安装包, 程序, 工具, 应用, 应用软件, 绿色软件,
+             software, apps, app, applications, programs, tools, setup]
+
+  - canonical: 下载
+    domain: 资源
+    ftype: ~
+    names: [下载, 迅雷下载, 待整理, 临时下载,
+             downloads, download]
+
+  - canonical: 备份
+    domain: 资源
+    ftype: ~
+    names: [备份, 归档, 冷备份, 历史版本,
+             backup, backups, archive, archived]
+
+  - canonical: 游戏
+    domain: 生活
+    ftype: 软件
+    names: [游戏, 单机游戏, 游戏库, steam, 游戏备份,
+             games, game, gaming]
+
+  - canonical: 设计
+    domain: 工作
+    ftype: 设计
+    names: [设计, 素材, 设计素材, 平面设计, 图纸, 字体,
+             design, assets, fonts, graphics]
+
+  - canonical: 系统
+    domain: 资源
+    ftype: 系统镜像
+    names: [系统, 镜像, 固件, 系统镜像, 驱动,
+             system, iso, firmware, drivers]

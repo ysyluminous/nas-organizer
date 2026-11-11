@@ -30,6 +30,8 @@ services:
       PGID: "${PGID:-1000}"
       # 生产默认关闭 API 文档接口；调试时设为 1
       NAS_ORGANIZER_DOCS: "${NAS_ORGANIZER_DOCS:-0}"
+      # 启动自检：逗号分隔的「容器内」挂载路径，属主不匹配时打印修复命令（不自动 chown）
+      MOUNT_CHECK_PATHS: "${MOUNT_CHECK_PATHS:-/scan/media1,/write/target}"
 
     volumes:
       # ---------- A. 扫描源：一律 :ro 只读 ----------

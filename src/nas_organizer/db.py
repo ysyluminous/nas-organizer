@@ -97,6 +97,17 @@ CREATE TABLE IF NOT EXISTS scan_state (
     file_count   INTEGER NOT NULL,
     status       TEXT NOT NULL
 );
+
+-- 定时调度审计（独立于 op_logs：调度任务无 plan_item_id，不污染文件操作日志）
+CREATE TABLE IF NOT EXISTS scheduler_logs (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_name     TEXT NOT NULL,
+    command      TEXT NOT NULL,
+    status       TEXT NOT NULL,
+    detail       TEXT,
+    started_at   REAL NOT NULL,
+    duration_sec REAL NOT NULL
+);
 """
 
 

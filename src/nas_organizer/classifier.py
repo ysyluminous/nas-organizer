@@ -11,15 +11,23 @@ from .config import Config
 from .db import Database
 from .models import FileRecord
 
-# 内置默认规则（config 文件可覆盖）
+# 内置兜底规则（config/type_rules.yaml 存在时以其为准，共 15 类 323 条）
 DEFAULT_TYPE_RULES: dict[str, list[str]] = {
     "音乐": ["flac", "mp3", "wav", "m4a", "aac", "ogg", "ape", "wma", "opus"],
     "视频": ["mp4", "mkv", "avi", "mov", "rmvb", "wmv", "flv", "webm", "m4v", "ts"],
     "图书": ["epub", "mobi", "azw3", "djvu"],
+    "漫画": ["cbr", "cbz", "cbt"],
     "图片": ["jpg", "jpeg", "png", "gif", "bmp", "webp", "heic", "tiff", "svg"],
     "软件": ["exe", "msi", "apk", "dmg", "deb", "rpm", "appimage"],
     "压缩包": ["zip", "rar", "7z", "tar", "gz", "bz2", "xz"],
-    "文档": ["doc", "docx", "xls", "xlsx", "ppt", "pptx", "csv", "md", "txt"],
+    "文档": ["doc", "docx", "xls", "xlsx", "ppt", "pptx", "csv", "md", "txt", "pdf"],
+    "代码": ["py", "js", "ts", "java", "c", "cpp", "go", "rs", "sh", "html", "css"],
+    "数据": ["db", "sqlite", "json", "yaml", "parquet", "jsonl", "xml"],
+    "字体": ["ttf", "otf", "woff", "woff2", "eot", "ttc"],
+    "系统镜像": ["iso", "img", "vhd", "vmdk", "qcow2", "ova", "bin"],
+    "设计": ["psd", "ai", "eps", "cdr", "dwg", "dxf", "sketch", "fig"],
+    "字幕": ["srt", "ass", "ssa", "vtt", "sub"],
+    "临时与杂项": ["tmp", "bak", "log", "ini", "part", "torrent"],
 }
 
 DEFAULT_DOMAIN_KEYWORDS: dict[str, list[str]] = {
@@ -75,6 +83,7 @@ class Classifier:
             "classification.domain_rules", DEFAULT_DOMAIN_PATHS, key="paths"
         )
         self.path_rules = self._load_path_rules()
+        self.folder_aliases = self._load_folder_aliases()
         self.model_enabled = bool(config.get("classification.model.enabled", False))
         self.threshold = float(config.get("classification.model.threshold", 0.8))
         # 热卷来自配置中 role=hot 的挂载点，不再硬编码任何盘符
@@ -107,14 +116,58 @@ class Classifier:
                 pass
         return rules
 
+    @staticmethod
+    def _normalize_segment(text: str) -> str:
+        """归一化目录段：小写、去空格/下划线/连字符，仅保留字母数字与中文。"""
+        text = text.strip().lower()
+        return re.sub(r"[\s_\-]+", "", text)
+
+    def _load_folder_aliases(self) -> dict[str, tuple[str, str | None]]:
+        """别名 → (归属域, 类型或None)。支持用户覆盖；内置兜底为空。"""
+        aliases: dict[str, tuple[str, str | None]] = {}
+        path = self.config.get("classification.folder_aliases")
+        if path and Path(str(path)).exists():
+            try:
+                with open(str(path), "r", encoding="utf-8") as f:
+                    data = yaml.safe_load(f) or {}
+                for group in data.get("groups", []):
+                    domain = str(group.get("domain", ""))
+                    ftype = group.get("ftype")
+                    for name in group.get("names", []):
+                        key = self._normalize_segment(str(name))
+                        if key:
+                            aliases.setdefault(key, (domain, ftype))
+            except Exception as exc:
+                print(f"[WARN] 加载文件夹别名失败 {path}: {exc}")
+        return aliases
+
+    def _by_folder_alias(self, path: str) -> tuple[str, str] | None:
+        """按路径段精确匹配别名；不扫描文件名，避免误伤『电影项目资料』类目录。"""
+        # path 已小写；用正则同时兼容 / 与 \ 分隔
+        segments = [s for s in re.split(r"[/\\]", path) if s]
+        if not segments:
+            return None
+        # 最后一段通常是文件名，不参与目录别名匹配
+        for seg in segments[:-1]:
+            key = self._normalize_segment(seg)
+            if key in self.folder_aliases:
+                domain, ftype = self.folder_aliases[key]
+                return domain, ftype or ""
+        return None
+
     def classify_all(self) -> dict[str, int]:
         """对全部 active 文件分类，返回统计."""
         records = self.db.get_all_active()
-        stats: dict[str, int] = {"total": len(records), "path": 0, "ext": 0, "keyword": 0, "model": 0, "manual": 0}
+        stats: dict[str, int] = {
+            "total": len(records), "path": 0, "alias": 0, "ext": 0, "keyword": 0,
+            "model": 0, "manual": 0, "unknown_ext": 0,
+        }
         for rec in records:
             ftype, domain, temp, confidence, by = self.classify(rec)
             self.db.update_classification(rec.id, ftype, domain, temp, confidence, by)
             stats[by] = stats.get(by, 0) + 1
+            if ftype == "其他":
+                stats["unknown_ext"] += 1
         return stats
 
     def classify(self, record: FileRecord) -> tuple[str, str, str, float, str]:
@@ -128,10 +181,24 @@ class Classifier:
                 ftype = ftype_hint or self._by_ext(record.ext)
                 return ftype, domain, self._by_temp(record), 1.0, "path"
 
-        # 2. 扩展名 → 类型
+        # 2. 文件夹别名（目录段精确匹配，优先于扩展名/关键词）
+        #    别名只指定「归属域」而未指定「类型」时，若文件名关键词给出了
+        #    明确的归属域，则关键词优先——避免 inbox/下载 这类通用目录误伤工作文件。
+        alias = self._by_folder_alias(path_lower)
+        keyword_domain = self._by_keywords(name_lower, path_lower)
+        if alias:
+            alias_domain, alias_ftype = alias
+            if not alias_ftype and keyword_domain and keyword_domain != alias_domain:
+                ftype = self._by_ext(record.ext)
+                if ftype != "其他":
+                    return ftype, keyword_domain, self._by_temp(record), 0.9, "keyword"
+            ftype = alias_ftype or self._by_ext(record.ext)
+            return ftype, alias_domain, self._by_temp(record), 0.93, "alias"
+
+        # 3. 扩展名 → 类型
         ftype = self._by_ext(record.ext)
-        # 3. 关键词 → 归属
-        domain = self._by_keywords(name_lower, path_lower)
+        # 4. 关键词 → 归属
+        domain = keyword_domain
         if domain and ftype != "其他":
             return ftype, domain, self._by_temp(record), 0.95, "keyword"
         if ftype != "其他" and self._by_domain_path(path_lower):
