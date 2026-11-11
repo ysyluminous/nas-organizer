@@ -171,7 +171,8 @@ bash scripts/install-skills.sh   # 安装到 ~/.workbuddy/skills/
 - [x] D3：两级回收站 / 12 类专项清理 / 备份审计 / 批量归类（MCP 增至 46）
 - [x] D4：反馈学习 / 可选 Ollama 兜底 / exif·ID3 媒体识别 / pHash 相似图片（MCP 增至 54）
 - [x] D5：多维虚拟目录 / 断点续传 / CSV 全量 undo / 剧集识别 / 任务监控（MCP 增至 64）
-- [ ] D6–D7：复核台、自然语言、PWA 与超越验收
+- [x] D6：人工复核台 / 视频关键帧 / rclone 只读索引 / 自然语言意图映射（MCP 增至 72）
+- [ ] D7：长尾插件、PWA 与全量超越验收
 - [ ] 真机多品牌联调
 
 ## D4 快速体验
@@ -213,6 +214,22 @@ python -m nas_organizer media season-suggest --target /write/series
 ```
 
 虚拟目录、CSV undo、任务监控均不移动/删除源文件，落地写操作仍走「计划→确认→执行」链路。详见 [进度计划 D5 报告](docs/进度计划.md)。
+
+## D6 快速体验
+
+```bash
+# 复核台：低置信度分类集中人工裁决（Web「复核台」tab 或 CLI）
+python -m nas_organizer review queue          # 待复核队列
+python -m nas_organizer review decide 12 --field domain --value 工作   # 修正+写反馈
+python -m nas_organizer review history        # 裁决审计
+
+# 可选外部工具（缺失自动降级，不影响主流程）
+python -m nas_organizer remote capability     # 查看 ffmpeg / rclone 是否可用
+python -m nas_organizer media video-similar   # FFmpeg 关键帧找相似视频（需 FFmpeg）
+python -m nas_organizer remote ls "nas:Media" # rclone lsjson 只读预览（需 rclone）
+```
+
+自然语言交互通过 Agent 调用（服务端只接受结构化参数、不接 LLM）：例如"帮我体检 NAS"→ `get_stats`，"找重复先出清单别删"→ `list_duplicates`，"这些文件归到工作"→ `review_queue`/`review_decide`。调用 `intent_schema` 工具可获取完整意图映射表。详见 [进度计划 D6 报告](docs/进度计划.md)。
 
 ## License
 

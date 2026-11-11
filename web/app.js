@@ -206,6 +206,71 @@ async function rollback() {
   } catch (e) { toast('回滚失败：' + e.message); }
 }
 
+// ---------- 复核台 ----------
+
+async function loadReview() {
+  try {
+    const [stats, queue, history] = await Promise.all([
+      api('/api/review/stats'),
+      api('/api/review/queue?limit=100'),
+      api('/api/review/history?limit=50'),
+    ]);
+    $('#review-stat').textContent =
+      `低置信度 ${stats.low_confidence} · 冲突 ${stats.plan_conflicts} · 已裁决 ${stats.decisions_made}（阈值 ${stats.threshold}）`;
+
+    $('#review-list').innerHTML = queue.low_confidence.length || queue.plan_conflicts.length
+      ? [
+        ...queue.low_confidence.map(it => `
+          <div class="panel">
+            <h3>[文件 #${it.id}] ${escapeHtml(it.ftype || '?')} / ${escapeHtml(it.domain || '?')} · 置信度 ${it.confidence}</h3>
+            <p class="path">${escapeHtml(it.path)}</p>
+            <div class="btn-row">
+              <select id="dom-${it.id}">
+                <option value="个人">个人</option><option value="工作">工作</option>
+                <option value="生活">生活</option><option value="资源">资源</option>
+              </select>
+              <button onclick="submitReview(${it.id}, 'domain', $('#dom-${it.id}').value)">修正归属域</button>
+              <select id="typ-${it.id}">
+                <option value="文档">文档</option><option value="视频">视频</option>
+                <option value="音乐">音乐</option><option value="图片">图片</option>
+                <option value="图书">图书</option><option value="其他">其他</option>
+              </select>
+              <button onclick="submitReview(${it.id}, 'ftype', $('#typ-${it.id}').value)">修正类型</button>
+            </div>
+          </div>`),
+        ...queue.plan_conflicts.map(it => `
+          <div class="panel">
+            <h3>[计划项 #${it.plan_item_id}] 执行失败</h3>
+            <p class="path">${escapeHtml(it.path)}</p>
+            <p class="error">${escapeHtml(it.error || '')}</p>
+          </div>`),
+      ].join('')
+      : '<div class="panel hint">暂无待复核项。运行「重新分类」后低置信度文件会出现在这里。</div>';
+
+    $('#review-history').innerHTML = history.length
+      ? `<table><tr><th>时间</th><th>文件</th><th>字段</th><th>变更</th></tr>
+         ${history.map(h => `<tr>
+           <td>${new Date(h.decided_at*1000).toLocaleString()}</td>
+           <td class="path">${escapeHtml(h.path)}</td>
+           <td>${escapeHtml(h.field)}</td>
+           <td>${escapeHtml(h.old_value || '-')} → ${escapeHtml(h.new_value)}</td>
+         </tr>`).join('')}</table>`
+      : '<p class="hint">暂无裁决历史。</p>';
+  } catch (e) { toast('复核加载失败：' + e.message); }
+}
+
+async function submitReview(fileId, field, value) {
+  if (!confirm(`确认把文件 #${fileId} 的 ${field} 改为「${value}」？会写入反馈供同类文件归类。`)) return;
+  try {
+    const r = await api('/api/review/decide', {
+      method: 'POST', body: { file_id: fileId, field, value }
+    });
+    toast(`裁决完成：学习 ${r.keywords_learned} 个关键词`);
+    loadReview();
+    loadStats();
+  } catch (e) { toast('裁决失败：' + e.message); }
+}
+
 // ---------- 启动 ----------
 
 async function boot() {

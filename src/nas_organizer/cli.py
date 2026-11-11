@@ -108,8 +108,30 @@ def main(argv: list[str] | None = None) -> int:
     p_season = media_sub.add_parser("season-suggest", help="剧集季数识别归档建议（只读）")
     p_season.add_argument("--target", required=True)
     p_season.add_argument("--limit", type=int, default=200)
+    media_sub.add_parser("video-similar", help="FFmpeg 关键帧比对相似视频（只读，缺 FFmpeg 降级）")
 
     sub.add_parser("tasks", help="查看任务监控快照（运行中进度与历史，只读）")
+
+    p_remote = sub.add_parser("remote", help="rclone 远端只读索引（需 rclone）")
+    remote_sub = p_remote.add_subparsers(dest="remote_action", required=True)
+    remote_sub.add_parser("capability", help="查看 ffmpeg/rclone 可用性")
+    p_rls = remote_sub.add_parser("ls", help="rclone lsjson 只读预览远端")
+    p_rls.add_argument("remote", help="name:path 形式（rclone 配置名）")
+    p_rls.add_argument("--limit", type=int, default=100)
+
+    p_review = sub.add_parser("review", help="复核台：低置信度分类与冲突计划人工裁决")
+    rev_sub = p_review.add_subparsers(dest="review_action", required=True)
+    p_rq = rev_sub.add_parser("queue", help="列出待复核队列")
+    p_rq.add_argument("--kind", choices=["all", "low_confidence", "plan_conflict"], default="all")
+    p_rq.add_argument("--limit", type=int, default=50)
+    rev_sub.add_parser("stats", help="复核统计")
+    rev_sub.add_parser("history", help="裁决历史")
+    p_rd = rev_sub.add_parser("decide", help="裁决一个文件（修正分类+写反馈）")
+    p_rd.add_argument("file_id", type=int)
+    p_rd.add_argument("--field", choices=["domain", "ftype"], required=True)
+    p_rd.add_argument("--value", required=True)
+    p_rd.add_argument("--note", default=None)
+    p_rd.add_argument("--no-learn", action="store_true", help="只改当前文件，不写反馈")
 
     p_recycle = sub.add_parser("recycle", help="两级回收站管理")
     rec_sub = p_recycle.add_subparsers(dest="recycle_action", required=True)
@@ -229,6 +251,48 @@ def main(argv: list[str] | None = None) -> int:
         elif args.undo_action == "import":
             print("[OK] 回滚计划:", cu.import_plan(args.path, args.name))
 
+    elif args.command == "remote":
+        from .remote import RcloneIndexer, capability
+        idx = RcloneIndexer(config, db)
+        if args.remote_action == "capability":
+            for k, v in capability().items():
+                print(f"  {k}: {'可用' if v else '不可用（将优雅降级）'}")
+        elif args.remote_action == "ls":
+            if not idx.available():
+                print("[提示] rclone 未安装：请安装后配置 remote，或直接使用本地卷扫描")
+            else:
+                entries = idx.lsjson(args.remote)
+                print(f"[OK] rclone 只读预览 {len(entries)} 项（未下载/未同步）")
+                for e in entries[:args.limit]:
+                    print(f"  {e.get('Size', 0):>12}  {e.get('Path')}")
+
+    elif args.command == "review":
+        from .review import ReviewQueue
+        rq = ReviewQueue(config, db)
+        action = args.review_action
+        if action == "queue":
+            q = rq.queue(limit=args.limit, kind=args.kind)
+            print(f"[OK] 待复核队列：低置信度 {len(q['low_confidence'])}，冲突计划 {len(q['plan_conflicts'])}")
+            for it in q["low_confidence"][:30]:
+                print(f"  [{it['id']}] {it['ftype']}/{it['domain']} conf={it['confidence']:.2f} {it['path']}")
+            for it in q["plan_conflicts"][:15]:
+                print(f"  [plan_item {it['plan_item_id']}] {it['path']} err={it['error']}")
+        elif action == "stats":
+            print("[OK] 复核统计:", rq.stats())
+        elif action == "history":
+            rows = rq.history()
+            if not rows:
+                print("暂无裁决历史")
+            for r in rows[:30]:
+                print(f"  [{r['id']}] {r['field']}: {r['old_value']} → {r['new_value']}  {r['path']}")
+        elif action == "decide":
+            try:
+                result = rq.decide(args.file_id, args.field, args.value, args.note,
+                                   learn=not args.no_learn)
+                print("[OK] 裁决完成:", result)
+            except ValueError as exc:
+                print("[拒绝]", exc)
+
     elif args.command == "tasks":
         from .tasks import task_snapshot
         snap = task_snapshot(db)
@@ -288,6 +352,17 @@ def main(argv: list[str] | None = None) -> int:
                   f"{result.get('similar_groups', 0)} 组相似，{result.get('similar_pairs', 0)} 对")
             for g in result.get("groups", [])[:20]:
                 print(f"  [距离 {g['max_distance']}] {g['paths'][0]}")
+                for p in g["paths"][1:]:
+                    print(f"      ≈ {p}")
+        elif action == "video-similar":
+            from .remote import VideoKeyframeFinder
+            result = VideoKeyframeFinder(config, db).find_similar()
+            if result.get("available") is False:
+                print("[提示]", result.get("note"))
+            print(f"[OK] 视频关键帧扫描：{result.get('videos_scanned', 0)} 个视频，"
+                  f"{result.get('similar_groups', 0)} 组相似")
+            for g in result.get("groups", [])[:20]:
+                print(f"  {g['paths'][0]}")
                 for p in g["paths"][1:]:
                     print(f"      ≈ {p}")
         elif action == "season-suggest":

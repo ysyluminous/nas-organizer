@@ -43,7 +43,13 @@ DEFAULT_CONFIG: dict[str, Any] = {
     # D4 媒体元数据感知：无可选依赖时优雅降级，绝不报错中断主流程
     "media": {"exif_enabled": True, "id3_enabled": True},
     # D4 感知哈希相似图片：默认开启但只在图片组内计算
-    "perceptual": {"enabled": True, "threshold": 10, "hash_size": 8},
+    "perceptual": {"enabled": True, "threshold": 10, "hash_size": 8,
+                   # D6 视频关键帧（需 FFmpeg，缺失自动降级）
+                   "video_enabled": True, "video_threshold": 12, "video_frames": 3},
+    # D6 人工复核台：低于阈值的分类进入待复核队列
+    "review": {"threshold": 0.8},
+    # D6 rclone 远端索引（需 rclone，缺失自动降级；只读 lsjson）
+    "remote": {"volume": "remote"},
     "web": {"host": "0.0.0.0", "port": 8765},
 }
 

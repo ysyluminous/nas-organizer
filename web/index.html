@@ -57,6 +57,7 @@
     <button class="active" data-tab="overview">概览</button>
     <button data-tab="duplicates">重复文件</button>
     <button data-tab="plans">迁移计划</button>
+    <button data-tab="review">复核台</button>
     <button data-tab="actions">操作</button>
   </nav>
 
@@ -81,6 +82,17 @@
       <button onclick="createPlan()">生成计划</button>
     </div>
     <div id="plan-list"></div>
+  </section>
+
+  <section id="tab-review" class="tab">
+    <div class="toolbar">
+      <button onclick="loadReview()">刷新待复核</button>
+      <span class="hint" id="review-stat"></span>
+    </div>
+    <p class="hint">低置信度分类与执行失败的项目集中在此。裁决会立即修正当前文件，并把关键词写入反馈供同类文件自动归类；不移动任何文件。</p>
+    <div id="review-list"></div>
+    <h3>裁决历史</h3>
+    <div id="review-history"></div>
   </section>
 
   <section id="tab-actions" class="tab">

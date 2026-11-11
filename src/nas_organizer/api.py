@@ -125,6 +125,14 @@ class ConfirmRequest(BaseModel):
     limit: int = 0
 
 
+class ReviewDecisionRequest(BaseModel):
+    file_id: int
+    field: str
+    value: str
+    note: str | None = None
+    learn: bool = True
+
+
 @app.get("/api/auth/status")
 def auth_status():
     """前端据此判断是否需要显示登录页；不泄露任何凭据信息。"""
@@ -311,6 +319,36 @@ def scan():
 def classify():
     from .classifier import Classifier
     return Classifier(_config or Config.load(), _get_db()).classify_all()
+
+
+@app.get("/api/review/queue")
+def review_queue(limit: int = 100, offset: int = 0, kind: str = "all"):
+    """待复核队列：低置信度分类 + 冲突计划（只读）。"""
+    from .review import ReviewQueue
+    return ReviewQueue(_config, _get_db()).queue(limit, offset, kind)
+
+
+@app.get("/api/review/stats")
+def review_stats():
+    from .review import ReviewQueue
+    return ReviewQueue(_config, _get_db()).stats()
+
+
+@app.get("/api/review/history")
+def review_history(limit: int = 100):
+    from .review import ReviewQueue
+    return ReviewQueue(_config, _get_db()).history(limit)
+
+
+@app.post("/api/review/decide")
+def review_decide(req: ReviewDecisionRequest):
+    """人工裁决：修正分类并写回 feedback。只改索引，不动用户文件。"""
+    from .review import ReviewQueue
+    try:
+        return ReviewQueue(_config, _get_db()).decide(
+            req.file_id, req.field, req.value, req.note, req.learn)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
 
 
 @app.get("/api/tasks")

@@ -1,4 +1,8 @@
-fastapi>=0.110
+# fastapi 与 starlette 必须配对：starlette 1.x 移除了 on_startup 参数，
+# fastapi <0.132 会因此报 Router.__init__() unexpected keyword 'on_startup'。
+# 固定到已验证兼容的组合（2026-11 验证：fastapi 0.162.4 + starlette 1.10.0）。
+fastapi>=0.132,<1
+starlette>=1.0,<2
 uvicorn[standard]>=0.27
 pydantic>=2.6
 PyYAML>=6.0

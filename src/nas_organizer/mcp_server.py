@@ -27,7 +27,7 @@ from .db import Database
 from .planner import Planner
 from .security import PathGuard, PathViolation
 
-VERSION = "0.5.0"
+VERSION = "0.6.0"
 PROTOCOL_VERSION = "2025-06-18"
 
 
@@ -236,6 +236,27 @@ class MCPServer:
         s._register("task_list", "任务监控：运行中任务进度与调度/操作历史（只读）",
                     {"limit": {"type": "integer", "default": 50}},
                     handler=lambda a: s._task_list(a))
+        # ---- 只读：D6 复核台 ----
+        s._register("review_queue", "待复核队列：低置信度分类与冲突计划（只读）",
+                    {"kind": {"type": "string", "enum": ["all", "low_confidence", "plan_conflict"]},
+                     "limit": {"type": "integer", "default": 100},
+                     "offset": {"type": "integer", "default": 0}},
+                    handler=lambda a: s._review_queue(a))
+        s._register("review_stats", "复核统计：待复核数量与已裁决数（只读）",
+                    handler=lambda a: s._review_stats())
+        s._register("review_history", "查看人工裁决历史（只读）",
+                    {"limit": {"type": "integer", "default": 100}},
+                    handler=lambda a: s._review_history(a))
+        s._register("intent_schema", "自然语言意图→结构化工具映射说明（服务端不接 LLM）",
+                    handler=lambda a: s._intent_schema())
+        s._register("external_capability", "查看 FFmpeg / rclone 可选外部工具是否可用",
+                    handler=lambda a: s._external_capability())
+        s._register("video_similar", "FFmpeg 关键帧比对相似视频（只读，缺 FFmpeg 优雅降级）",
+                    {"limit": {"type": "integer", "default": 50}},
+                    handler=lambda a: s._video_similar(a))
+        s._register("remote_lsjson", "rclone lsjson 只读预览远端文件（不下载不同步，需配置 rclone）",
+                    {"remote": {"type": "string"}, "limit": {"type": "integer", "default": 100}},
+                    ["remote"], handler=lambda a: s._remote_lsjson(a))
 
         # ---- 受控写：需要 Token ----
         s._register("scan_start", "扫描配置的卷并建立索引（只读，不改文件）",
@@ -296,6 +317,13 @@ class MCPServer:
         s._register("csv_undo_import", "从 CSV 生成回滚计划（只建计划，不执行文件操作）",
                     {"path": {"type": "string"}, "name": {"type": "string"}}, ["path"],
                     lambda a: s._csv_undo_import(a), write=True)
+        # D6 复核裁决（只改索引库，不动用户文件）
+        s._register("review_decide", "人工裁决：修正文件分类并写回反馈（需确认）",
+                    {"file_id": {"type": "integer"}, "field": {"type": "string", "enum": ["domain", "ftype"]},
+                     "value": {"type": "string"}, "confirm": {"type": "boolean"},
+                     "note": {"type": "string"}, "learn": {"type": "boolean", "default": True}},
+                    ["file_id", "field", "value", "confirm"],
+                    lambda a: s._review_decide(a), write=True, confirm=True)
 
     # ---------- 工具实现：基础 ----------
 
@@ -670,6 +698,69 @@ class MCPServer:
         from .tasks import task_snapshot
         return task_snapshot(self.db, int(args.get("limit", 50)))
 
+    # ---------- 工具实现：D6 只读 ----------
+
+    def _review_queue(self, args: dict) -> dict:
+        from .review import ReviewQueue
+        return ReviewQueue(self.config, self.db).queue(
+            int(args.get("limit", 100)), int(args.get("offset", 0)),
+            str(args.get("kind", "all")))
+
+    def _review_stats(self) -> dict:
+        from .review import ReviewQueue
+        return ReviewQueue(self.config, self.db).stats()
+
+    def _review_history(self, args: dict) -> dict:
+        from .review import ReviewQueue
+        rows = ReviewQueue(self.config, self.db).history(int(args.get("limit", 100)))
+        return {"count": len(rows), "items": rows}
+
+    def _external_capability(self) -> dict:
+        from .remote import capability
+        return capability()
+
+    def _video_similar(self, args: dict) -> dict:
+        from .remote import VideoKeyframeFinder
+        result = VideoKeyframeFinder(self.config, self.db).find_similar()
+        if "groups" in result:
+            result["groups"] = result["groups"][:int(args.get("limit", 50))]
+        return result
+
+    def _remote_lsjson(self, args: dict) -> dict:
+        from .remote import RcloneIndexer
+        idx = RcloneIndexer(self.config, self.db)
+        entries = idx.lsjson(args["remote"])
+        limit = int(args.get("limit", 100))
+        return {"available": idx.available(), "remote": args["remote"],
+                "count": len(entries), "entries": entries[:limit],
+                "note": "只读 lsjson 预览，不下载/不同步/不删除"}
+
+    def _intent_schema(self) -> dict:
+        """服务端不接 LLM：只返回「自然语言意图 → 结构化工具」映射供 Agent 解析。"""
+        return {
+            "principle": "服务端只接受结构化参数；自然语言由客户端 Agent 解析后调用对应工具，服务端零 LLM 密钥",
+            "intents": [
+                {"phrase_examples": ["体检 NAS", "看看哪个盘快满了"],
+                 "tools": ["get_stats", "get_stats_by_volume", "get_stats_by_domain"]},
+                {"phrase_examples": ["找重复文件先出清单", "别删"],
+                 "tools": ["get_duplicate_summary", "list_duplicates"],
+                 "note": "默认只读，删除/移动需用户显式确认"},
+                {"phrase_examples": ["生成迁移计划先别执行"],
+                 "tools": ["plan_create", "preview_plan"],
+                 "note": "plan_create 只建计划；执行必须 plan_execute + confirm=true"},
+                {"phrase_examples": ["把工作类文件单独列出来"],
+                 "tools": ["list_files", "view_get"]},
+                {"phrase_examples": ["照片按拍摄日期整理", "音乐按歌手整理"],
+                 "tools": ["media_capability", "photo_plan_suggest", "music_plan_suggest"],
+                 "note": "只出建议清单，不移动文件"},
+                {"phrase_examples": ["这些文件该归到工作/个人"],
+                 "tools": ["review_queue", "review_decide"],
+                 "note": "review_decide 需 confirm=true"},
+                {"phrase_examples": ["查相似图片"],
+                 "tools": ["phash_similar"]},
+            ],
+        }
+
     # ---------- 工具实现：受控写 ----------
 
     def _require_confirm(self, args: dict) -> None:
@@ -769,6 +860,13 @@ class MCPServer:
         self.guard.check(p, source="mcp", action="undo-import")
         from .reliability import CSVUndo
         return CSVUndo(self.config, self.db).import_plan(str(p), args.get("name"))
+
+    def _review_decide(self, args: dict) -> dict:
+        self._require_confirm(args)
+        from .review import ReviewQueue
+        return ReviewQueue(self.config, self.db).decide(
+            int(args["file_id"]), args["field"], args["value"],
+            args.get("note"), bool(args.get("learn", True)))
 
     # ---------- JSON-RPC 调度 ----------
 
