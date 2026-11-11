@@ -42,21 +42,22 @@ DEFAULT_DOMAIN_KEYWORDS: dict[str, list[str]] = {
     ],
 }
 
+# 通用路径关键词：只有语义明确的目录才作为归属信号。
+# 特定 NAS 的目录名请写进 config/domain_rules.yaml，不要改代码。
 DEFAULT_DOMAIN_PATHS: dict[str, list[str]] = {
-    "工作": ["/工作/", "/项目/", "/5公司文件/", "/到家/", "/yh/"],
-    "生活": ["/生活/", "/photos/", "/相册/", "/照片/", "/做饭/", "/分享内容/"],
-    "个人": ["/个人/", "/个人文件/", "/1个人文件/"],
-    "资源": ["/500g/", "/电子书/", "/待整理/", "/国学/", "/备份/", "/课程/"],
+    "工作": ["/工作/", "/项目/", "/work/", "/project/"],
+    "生活": ["/生活/", "/photos/", "/相册/", "/照片/", "/做饭/", "/life/"],
+    "个人": ["/个人/", "/private/", "/documents/"],
+    "资源": ["/电子书/", "/国学/", "/备份/", "/课程/", "/ebooks/", "/books/"],
 }
 
-# 路径规则 → 直接确定归属域和类型
+# 路径规则 → 直接确定归属域和类型（最高优先级，语义明确的目录）
 DEFAULT_PATH_RULES: list[tuple[str, str, str]] = [
-    ("/分享内容/电影/", "生活", "视频"),
-    ("/分享内容/电视剧/", "生活", "视频"),
-    ("/分享内容/音乐/", "生活", "音乐"),
+    ("/电影/", "生活", "视频"),
+    ("/电视剧/", "生活", "视频"),
+    ("/影视/", "生活", "视频"),
+    ("/音乐/", "生活", "音乐"),
     ("/电子书/", "资源", "图书"),
-    ("/国学/", "资源", "图书"),
-    ("/待整理/", "资源", None),
 ]
 
 
@@ -76,6 +77,11 @@ class Classifier:
         self.path_rules = self._load_path_rules()
         self.model_enabled = bool(config.get("classification.model.enabled", False))
         self.threshold = float(config.get("classification.model.threshold", 0.8))
+        # 热卷来自配置中 role=hot 的挂载点，不再硬编码任何盘符
+        self.hot_volumes = {
+            str(v.get("name", "")) for v in (config.get("volumes", []) or [])
+            if isinstance(v, dict) and str(v.get("role", "")).lower() == "hot"
+        }
 
     def _load_yaml(self, cfg_key: str, default: dict, key: str | None = None) -> dict:
         path = self.config.get(cfg_key)
@@ -171,7 +177,7 @@ class Classifier:
     def _by_temp(self, record: FileRecord) -> str:
         now = time.time()
         age = now - max(record.mtime, record.atime)
-        if record.volume == "volume4":
+        if record.volume in self.hot_volumes:
             return "热"
         if age <= 90 * 86400:
             return "热"

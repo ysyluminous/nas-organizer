@@ -1,24 +1,58 @@
+# ============================================================
+# NAS Organizer — 通用 Docker Compose 模板
+# ------------------------------------------------------------
+# 使用前必做：
+#   1. cp .env.example .env ，然后按你的 NAS 实际情况修改路径
+#   2. 复制 config/config.example.yaml 为 config/config.yaml，
+#      把里面的 volumes / write_targets 路径改成下面容器内的挂载路径
+#   3. 详细逐项说明见 docs/挂载配置指南.md
+#
+# 安全提醒：端口默认只绑定 127.0.0.1。需要局域网访问时，把 LISTEN_IP
+#           改为 NAS 的内网 IP；切勿暴露到公网。
+# ============================================================
+
 services:
   nas-organizer:
     build: .
     image: nas-organizer:latest
     container_name: nas-organizer
     restart: unless-stopped
+
     ports:
-      - "8765:8765"
+      # 格式：宿主机IP:宿主机端口:容器端口
+      - "${LISTEN_IP:-127.0.0.1}:${WEB_PORT:-8765}:8765"
+
+    environment:
+      TZ: "${TZ:-Asia/Shanghai}"
+      # 关键：改成 NAS 上拥有共享文件夹读写权限的用户/组 ID
+      # 群晖见 docs/安装/群晖.md；威联通见 docs/安装/威联通.md
+      PUID: "${PUID:-1000}"
+      PGID: "${PGID:-1000}"
+      # 生产默认关闭 API 文档接口；调试时设为 1
+      NAS_ORGANIZER_DOCS: "${NAS_ORGANIZER_DOCS:-0}"
+
     volumes:
-      # 只读挂载：扫描引擎
-      - /volume1/8T1:/nas/8T1:ro
-      - /volume2/16t1:/nas/16t1:ro
-      - /volume3/8t2:/nas/8t2:ro
-      - /volume4/1T-ssd:/nas/1T-ssd:ro
-      - /volume5/16t2:/nas/16t2:ro
-      # 读写挂载：仅执行器与备份使用
-      - /volume5/16t2:/write/16t2:rw
-      - /volume4/1T-ssd:/write/ssd:rw
-      # 配置与数据
+      # ---------- A. 扫描源：一律 :ro 只读 ----------
+      # 每多一个盘/共享文件夹，就复制一行并改用新的变量名（SCAN_2 / SCAN_3 ...）
+      # 右侧容器内路径可自定义，但必须与 config/config.yaml 的 volumes[].path 一致
+      - "${SCAN_1:-./example-media}:/scan/media1:ro"
+      # - "${SCAN_2:-./example-media}:/scan/media2:ro"
+      # - "${SCAN_3:-./example-media}:/scan/media3:ro"
+
+      # ---------- B. 写入目标：只在需要执行迁移时挂载，严格限定到具体目录 ----------
+      - "${WRITE_TARGET:-./example-target}:/write/target:rw"
+
+      # ---------- C. 备份目标（可选，不用可删除本行） ----------
+      # - "${BACKUP_TARGET:-./example-backup}:/backup:rw"
+
+      # ---------- D. 应用自身数据：保持不动 ----------
       - ./config:/app/config:ro
       - ./data:/app/data:rw
       - ./logs:/app/logs:rw
-    environment:
-      - TZ=Asia/Shanghai
+
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8765/api/auth/status', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s

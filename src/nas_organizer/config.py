@@ -20,6 +20,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "dedupe": {"head_size": 65536, "tail_size": 65536, "workers": 2},
     "scanner": {"workers": 4, "exclude_dirs": ["#recycle", "@eaDir", ".git", "node_modules"]},
     "backup": {"hot": {"enabled": False}, "cold": {"enabled": False}},
+    "auth": {"token_ttl_seconds": 28800, "max_failed_attempts": 5},
     "web": {"host": "0.0.0.0", "port": 8765},
 }
 

@@ -76,6 +76,12 @@ backup:
     verify_hash: true
     schedule: "0 3 * * 0"
 
+# 认证安全设置（密码本身不写在这里，见 docs/安全与认证.md）
+auth:
+  token_ttl_seconds: 28800   # 登录有效期 8 小时
+  max_failed_attempts: 5     # 连续失败 5 次后临时锁定
+
 web:
+  # 建议绑定 127.0.0.1 并通过反代 + HTTPS 访问；需要局域网直连才用 0.0.0.0
   host: 0.0.0.0
   port: 8765

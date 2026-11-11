@@ -7,10 +7,50 @@
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
+
+<!-- 登录层：未认证时覆盖全屏 -->
+<div id="login-overlay" class="login-overlay" style="display:none">
+  <div class="login-box">
+    <h1>NAS Organizer</h1>
+    <p class="login-sub">数据索引 · 分类 · 查重 · 迁移</p>
+    <label for="login-password">管理员密码</label>
+    <input type="password" id="login-password" placeholder="请输入密码" autocomplete="current-password" autofocus>
+    <button id="login-btn" class="primary" onclick="doLogin()">登录</button>
+    <p id="login-error" class="error"></p>
+    <p class="login-tip">首次启动时，初始密码打印在容器日志中，也保存在 data/INITIAL_PASSWORD.txt。登录后请立即修改。</p>
+  </div>
+</div>
+
+<!-- 修改密码弹窗 -->
+<div id="pwd-modal" class="modal" style="display:none">
+  <div class="modal-box">
+    <h2>修改管理员密码</h2>
+    <label for="old-pwd">当前密码</label>
+    <input type="password" id="old-pwd" autocomplete="current-password">
+    <label for="new-pwd">新密码（至少 8 位）</label>
+    <input type="password" id="new-pwd" autocomplete="new-password">
+    <label for="new-pwd2">确认新密码</label>
+    <input type="password" id="new-pwd2" autocomplete="new-password">
+    <div class="btn-row">
+      <button class="primary" onclick="doChangePassword()">确认修改</button>
+      <button onclick="closePwdModal()">取消</button>
+    </div>
+    <p id="pwd-error" class="error"></p>
+    <p class="login-tip">修改后所有已登录会话立即失效，需要使用新密码重新登录。</p>
+  </div>
+</div>
+
 <div class="app">
   <header>
-    <h1>NAS Organizer</h1>
-    <span class="subtitle">数据索引 · 分类 · 查重 · 迁移</span>
+    <div>
+      <h1>NAS Organizer</h1>
+      <span class="subtitle">数据索引 · 分类 · 查重 · 迁移</span>
+    </div>
+    <div class="header-actions">
+      <span id="user-label" class="user-label"></span>
+      <button onclick="openPwdModal()">安全设置</button>
+      <button onclick="doLogout()">退出</button>
+    </div>
   </header>
 
   <nav>
@@ -48,21 +88,22 @@
       <h3>维护操作</h3>
       <p class="hint">扫描、分类、查重会修改索引，不会动文件本身。</p>
       <div class="btn-row">
-        <button onclick="post('/api/scan','扫描')">扫描建索引</button>
-        <button onclick="post('/api/classify','分类')">重新分类</button>
-        <button onclick="post('/api/dedupe','查重')">重复检测</button>
+        <button onclick="post('/api/scan',{},'扫描')">扫描建索引</button>
+        <button onclick="post('/api/classify',{},'分类')">重新分类</button>
+        <button onclick="post('/api/dedupe',{},'查重')">重复检测</button>
       </div>
-      <h3>回滚</h3>
-      <p class="hint">回滚最近 N 条已执行的操作（默认 10 条）。</p>
+      <h3>危险操作</h3>
+      <p class="hint warning">执行计划会真实移动文件，回滚会撤销最近操作。两者都需二次确认，且全程写操作日志。</p>
       <div class="btn-row">
-        <input type="number" id="rollback-limit" value="10" min="1">
-        <button onclick="rollback()">回滚</button>
+        <input type="number" id="rollback-limit" value="10" min="1" title="回滚条数">
+        <button class="danger" onclick="rollback()">回滚最近操作</button>
       </div>
     </div>
   </section>
 
   <div id="toast"></div>
 </div>
+
 <script src="/static/app.js"></script>
 </body>
 </html>

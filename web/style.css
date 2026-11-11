@@ -37,3 +37,33 @@ th { color: #8a9099; font-weight: 400; }
 .hint { color: #8a9099; font-size: 12px; }
 #toast { position: fixed; bottom: 24px; right: 24px; background: #1f2329; color: #fff;
          padding: 10px 16px; border-radius: 6px; display: none; font-size: 13px; }
+
+/* ---- 认证 UI ---- */
+.header-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.user-label { color: #8a9099; font-size: 12px; }
+button.primary { background: #3370ff; color: #fff; border-color: #3370ff; }
+button.primary:hover { background: #245bdb; color: #fff; }
+button.danger { color: #d83931; border-color: #f0b8b5; }
+button.danger:hover { border-color: #d83931; color: #d83931; background: #fff4f4; }
+button:disabled { opacity: .6; cursor: not-allowed; }
+.error { color: #d83931; font-size: 12px; min-height: 16px; margin: 8px 0 0; }
+.warning { color: #b8860b; }
+
+.login-overlay, .modal { position: fixed; inset: 0; background: rgba(31,35,41,.55);
+                          display: flex; align-items: center; justify-content: center; z-index: 100; }
+.login-box, .modal-box { background: #fff; border-radius: 12px; padding: 32px;
+                          width: 380px; max-width: calc(100vw - 32px); box-shadow: 0 12px 48px rgba(0,0,0,.2); }
+.login-box h1 { font-size: 24px; font-weight: 500; margin: 0 0 4px; text-align: center; }
+.login-sub { text-align: center; color: #8a9099; font-size: 13px; margin: 0 0 24px; }
+.login-box label, .modal-box label { display: block; color: #646a73; font-size: 12px; margin: 12px 0 6px; }
+.login-box input, .modal-box input { width: 100%; padding: 10px 12px; font-size: 14px; }
+.login-box button.primary { width: 100%; margin-top: 18px; padding: 10px; }
+.login-tip { color: #8a9099; font-size: 11px; line-height: 1.6; margin-top: 16px; }
+.modal-box h2 { font-size: 18px; font-weight: 500; margin: 0 0 16px; }
+.table-scroll { max-height: 420px; overflow: auto; border: 1px solid #f0f1f3; }
+
+@media (max-width: 720px) {
+  .cards { grid-template-columns: repeat(2, 1fr); }
+  .grid-2 { grid-template-columns: 1fr; }
+  header { flex-wrap: wrap; }
+}

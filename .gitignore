@@ -9,7 +9,15 @@ env/
 data/*.db
 data/*.db-wal
 data/*.db-shm
+# 认证敏感文件：绝不提交
+data/auth.yaml
+data/.auth_secret
+data/INITIAL_PASSWORD.txt
 data/recycle/
+# 占位示例目录
+example-media/
+example-target/
+example-backup/
 data/models/*.ftz
 data/models/*.bin
 logs/*
