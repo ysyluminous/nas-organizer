@@ -1,0 +1,11 @@
+# 温度层规则
+hot:
+  max_age_days: 90
+  volume_hint: volume4
+warm:
+  max_age_days: 365
+cold:
+  default: true
+  force_if_size_gt_gb: 2
+
+# 判定顺序：volume hint → 时间 → 大小

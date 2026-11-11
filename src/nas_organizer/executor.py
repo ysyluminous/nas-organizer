@@ -1,0 +1,141 @@
+"""安全执行器：复制 → 校验 → 删除，全程记录日志可回滚."""
+
+import hashlib
+import shutil
+import time
+from pathlib import Path
+
+from .config import Config
+from .db import Database
+from .models import OpLog
+
+
+class Executor:
+    """执行迁移计划，保证每步可回滚."""
+
+    def __init__(self, config: Config, db: Database):
+        self.config = config
+        self.db = db
+        self.recycle_root = Path(config.get("executor.recycle_root", "data/recycle"))
+        self.recycle_root.mkdir(parents=True, exist_ok=True)
+
+    def execute_plan(self, plan_id: int, limit: int = 0) -> dict:
+        """执行计划中 pending 的条目."""
+        plan = self.db.get_plan(plan_id)
+        if not plan:
+            raise ValueError(f"计划 {plan_id} 不存在")
+        if plan.status not in ("draft", "confirmed"):
+            raise ValueError(f"计划状态 {plan.status} 不可执行")
+
+        with self.db.transaction() as conn:
+            conn.execute("UPDATE plans SET status='executing' WHERE id=?", (plan_id,))
+
+        items = [i for i in plan.items if i.status == "pending"]
+        if limit > 0:
+            items = items[:limit]
+
+        stats = {"total": len(items), "done": 0, "failed": 0, "skipped": 0}
+        for item in items:
+            result = self._execute_item(item.id, item.src_path, item.dst_path or "")
+            stats[result] += 1
+
+        with self.db.transaction() as conn:
+            conn.execute("UPDATE plans SET status='done' WHERE id=?", (plan_id,))
+        return stats
+
+    def _execute_item(self, item_id: int, src: str, dst: str) -> str:
+        src_path = Path(src)
+        dst_path = Path(dst)
+
+        if not src_path.exists():
+            self._set_item_status(item_id, "failed", "源文件不存在")
+            return "failed"
+        if dst_path.exists():
+            if self.config.get("executor.on_conflict", "rename") == "rename":
+                dst_path = self._rename_for_conflict(dst_path)
+            else:
+                self._set_item_status(item_id, "skipped", "目标已存在")
+                return "skipped"
+
+        dst_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = dst_path.with_suffix(dst_path.suffix + ".tmp")
+
+        try:
+            # 1. 复制到临时文件
+            shutil.copy2(src_path, tmp_path)
+            # 2. 校验
+            if not self._verify(src_path, tmp_path):
+                tmp_path.unlink(missing_ok=True)
+                self._set_item_status(item_id, "failed", "校验失败")
+                return "failed"
+            # 3. 重命名临时文件为目标
+            tmp_path.rename(dst_path)
+            # 4. 源文件移入回收区（不物理删除）
+            recycle = self._to_recycle(src_path)
+            shutil.move(str(src_path), str(recycle))
+            # 5. 记录日志
+            self.db.log_op(OpLog(
+                plan_item_id=item_id,
+                action="move",
+                src_path=str(recycle),
+                dst_path=str(dst_path),
+                sha256=self._sha256(dst_path),
+                size=dst_path.stat().st_size,
+                executed_at=time.time(),
+            ))
+            self._set_item_status(item_id, "done")
+            return "done"
+        except Exception as exc:
+            tmp_path.unlink(missing_ok=True)
+            self._set_item_status(item_id, "failed", str(exc))
+            return "failed"
+
+    def _verify(self, src: Path, dst: Path) -> bool:
+        if src.stat().st_size != dst.stat().st_size:
+            return False
+        return self._sha256(src) == self._sha256(dst)
+
+    @staticmethod
+    def _sha256(path: Path) -> str:
+        h = hashlib.sha256()
+        with path.open("rb") as f:
+            while chunk := f.read(1024 * 1024):
+                h.update(chunk)
+        return h.hexdigest()
+
+    @staticmethod
+    def _rename_for_conflict(path: Path) -> Path:
+        ts = time.strftime("%Y%m%d_%H%M%S")
+        return path.with_name(f"{path.stem}_{ts}{path.suffix}")
+
+    def _to_recycle(self, src: Path) -> Path:
+        safe = str(src).replace("/", "_").replace("\\", "_").lstrip("_")
+        return self.recycle_root / safe
+
+    def _set_item_status(self, item_id: int, status: str, error: str | None = None) -> None:
+        with self.db.transaction() as conn:
+            conn.execute(
+                "UPDATE plan_items SET status=?, error=? WHERE id=?",
+                (status, error, item_id),
+            )
+
+    def rollback_last(self, limit: int = 0) -> dict:
+        """回滚最近的操作（按 op_logs 倒序）."""
+        ops = self.db.get_unrolled_ops()
+        if limit > 0:
+            ops = ops[:limit]
+        stats = {"total": len(ops), "done": 0, "failed": 0}
+        for op in ops:
+            try:
+                dst = Path(op.dst_path)
+                src_recycle = Path(op.src_path)
+                if not dst.exists():
+                    raise FileNotFoundError(f"目标不存在: {dst}")
+                # 把目标移回回收区记录的原位置
+                shutil.move(str(dst), str(src_recycle))
+                self.db.mark_rolled_back(op.id)
+                stats["done"] += 1
+            except Exception as exc:
+                print(f"[ROLLBACK] 失败 {op.id}: {exc}")
+                stats["failed"] += 1
+        return stats

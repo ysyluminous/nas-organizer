@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NAS Organizer</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>NAS Organizer</h1>
+    <span class="subtitle">数据索引 · 分类 · 查重 · 迁移</span>
+  </header>
+
+  <nav>
+    <button class="active" data-tab="overview">概览</button>
+    <button data-tab="duplicates">重复文件</button>
+    <button data-tab="plans">迁移计划</button>
+    <button data-tab="actions">操作</button>
+  </nav>
+
+  <section id="tab-overview" class="tab active">
+    <div class="cards" id="stat-cards"></div>
+    <div class="grid-2">
+      <div class="panel"><h3>按归属域</h3><div id="by-domain"></div></div>
+      <div class="panel"><h3>按文件类型</h3><div id="by-ftype"></div></div>
+      <div class="panel"><h3>按温度层</h3><div id="by-temp"></div></div>
+      <div class="panel"><h3>按磁盘卷</h3><div id="by-volume"></div></div>
+    </div>
+  </section>
+
+  <section id="tab-duplicates" class="tab">
+    <div class="toolbar"><button onclick="loadDuplicates()">刷新</button></div>
+    <div id="dup-list"></div>
+  </section>
+
+  <section id="tab-plans" class="tab">
+    <div class="toolbar">
+      <button onclick="loadPlans()">刷新</button>
+      <button onclick="createPlan()">生成计划</button>
+    </div>
+    <div id="plan-list"></div>
+  </section>
+
+  <section id="tab-actions" class="tab">
+    <div class="panel">
+      <h3>维护操作</h3>
+      <p class="hint">扫描、分类、查重会修改索引，不会动文件本身。</p>
+      <div class="btn-row">
+        <button onclick="post('/api/scan','扫描')">扫描建索引</button>
+        <button onclick="post('/api/classify','分类')">重新分类</button>
+        <button onclick="post('/api/dedupe','查重')">重复检测</button>
+      </div>
+      <h3>回滚</h3>
+      <p class="hint">回滚最近 N 条已执行的操作（默认 10 条）。</p>
+      <div class="btn-row">
+        <input type="number" id="rollback-limit" value="10" min="1">
+        <button onclick="rollback()">回滚</button>
+      </div>
+    </div>
+  </section>
+
+  <div id="toast"></div>
+</div>
+<script src="/static/app.js"></script>
+</body>
+</html>

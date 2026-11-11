@@ -1,0 +1,24 @@
+services:
+  nas-organizer:
+    build: .
+    image: nas-organizer:latest
+    container_name: nas-organizer
+    restart: unless-stopped
+    ports:
+      - "8765:8765"
+    volumes:
+      # 只读挂载：扫描引擎
+      - /volume1/8T1:/nas/8T1:ro
+      - /volume2/16t1:/nas/16t1:ro
+      - /volume3/8t2:/nas/8t2:ro
+      - /volume4/1T-ssd:/nas/1T-ssd:ro
+      - /volume5/16t2:/nas/16t2:ro
+      # 读写挂载：仅执行器与备份使用
+      - /volume5/16t2:/write/16t2:rw
+      - /volume4/1T-ssd:/write/ssd:rw
+      # 配置与数据
+      - ./config:/app/config:ro
+      - ./data:/app/data:rw
+      - ./logs:/app/logs:rw
+    environment:
+      - TZ=Asia/Shanghai

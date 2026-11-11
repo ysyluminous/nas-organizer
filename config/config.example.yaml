@@ -1,0 +1,81 @@
+# NAS Organizer 配置示例
+# 复制为 config.yaml 后按实际情况修改
+
+database:
+  path: data/nas_organizer.db
+
+# 只读扫描挂载点（容器内路径）
+volumes:
+  - name: volume1
+    path: /nas/8T1
+    role: cold
+  - name: volume2
+    path: /nas/16t1
+    role: cold
+  - name: volume3
+    path: /nas/8t2
+    role: cold
+  - name: volume4
+    path: /nas/1T-ssd
+    role: hot
+  - name: volume5
+    path: /nas/16t2
+    role: warm
+
+# 写入目标（仅执行器使用）
+write_targets:
+  - name: volume5
+    path: /write/16t2
+    writable: true
+  - name: volume4
+    path: /write/ssd
+    writable: true
+
+classification:
+  type_rules: config/type_rules.yaml
+  domain_rules: config/domain_rules.yaml
+  temperature_rules: config/temperature_rules.yaml
+  model:
+    enabled: false
+    threshold: 0.8
+    provider: fasttext
+    model_path: data/models/domain.ftz
+
+dedupe:
+  head_size: 65536
+  tail_size: 65536
+  workers: 2
+
+scanner:
+  workers: 4
+  exclude_dirs:
+    - "#recycle"
+    - "@eaDir"
+    - ".git"
+    - "node_modules"
+
+planner:
+  conflict_policy: rename   # rename / skip / replace
+
+executor:
+  recycle_root: data/recycle
+  on_conflict: rename
+
+backup:
+  hot:
+    enabled: false
+    source: /write/16t2
+    target: /backup/hot
+    schedule: "0 2 * * *"
+    max_age_days: 90
+    exclude:
+      - "*.tmp"
+      - "#recycle/*"
+  cold:
+    enabled: false
+    verify_hash: true
+    schedule: "0 3 * * 0"
+
+web:
+  host: 0.0.0.0
+  port: 8765
