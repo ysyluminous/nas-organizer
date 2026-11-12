@@ -35,10 +35,12 @@ READ_ENDPOINTS = [
     "/api/audit/operations", "/api/mounts",
     "/api/scan/progress",
     "/api/tree/children", "/api/tree/ancestors",
+    "/api/dedupe/progress", "/api/dedupe/settings",
+    "/api/dedupe/reports", "/api/dedupe/reports/latest",
 ]
 
 # 会写索引但不碰用户文件的端点：无 confirm 必须 400
-CONFIRM_ENDPOINTS = ["/api/search/reindex", "/api/views/auto-tag"]
+CONFIRM_ENDPOINTS = ["/api/search/reindex", "/api/views/auto-tag", "/api/dedupe/settings"]
 
 
 def build_client(base: Path):

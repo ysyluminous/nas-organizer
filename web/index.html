@@ -152,8 +152,33 @@
 
       <!-- 重复文件 -->
       <section id="tab-duplicates" class="tab">
-        <div class="toolbar"><button onclick="loadDuplicates()">刷新</button></div>
-        <div id="dup-list"></div>
+        <div class="panel">
+          <h3>每日重复检测</h3>
+          <p class="hint">默认每天自动检测并生成报告，只更新索引，绝不移动或删除文件。报告按天保留，可查看历史趋势。</p>
+          <div class="toolbar" style="flex-wrap:wrap;gap:10px;align-items:center">
+            <label class="switch-label"><input type="checkbox" id="dup-auto-enable" onchange="saveDupSettings()"> 每天自动检测</label>
+            <label class="switch-label">执行时间 <input type="number" id="dup-run-hour" min="0" max="23" style="width:64px" onchange="saveDupSettings()"> 时</label>
+            <label class="switch-label">保留 <input type="number" id="dup-retention" min="1" max="365" style="width:70px" onchange="saveDupSettings()"> 天</label>
+            <span class="hint" id="dup-settings-status"></span>
+          </div>
+          <div class="scan-progress-slot" id="dup-progress"></div>
+          <div class="btn-row" style="margin-top:10px">
+            <button class="primary" onclick="startDedupe()">立即检测并生成报告</button>
+            <button onclick="loadDedupeReports()">刷新报告</button>
+          </div>
+        </div>
+        <div class="panel">
+          <h3>每日报告</h3>
+          <p class="hint">每天一份快照。点击某天查看重复组明细（Top 路径、浪费空间）。</p>
+          <div id="dup-reports"></div>
+          <div id="dup-report-detail"></div>
+        </div>
+        <div class="panel">
+          <h3>当前重复组</h3>
+          <p class="hint">来自索引库的实时重复分组。</p>
+          <div class="toolbar"><button onclick="loadDuplicates()">刷新</button></div>
+          <div id="dup-list"></div>
+        </div>
       </section>
 
       <!-- 虚拟目录 -->

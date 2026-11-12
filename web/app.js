@@ -146,8 +146,17 @@ async function doChangePassword() {
 // ---------- 多页面路由（hash 路由；刷新/前进后退都能还原当前页面） ----------
 
 const loadedTabs = new Set();
+async function loadDuplicatesPage() {
+  await Promise.all([
+    loadDuplicates(),
+    loadDupSettings(),
+    loadDedupeReports(),
+    pollDedupeProgress(),
+  ]);
+}
+
 const TAB_LOADERS = {
-  overview: loadStats, files: loadFiles, search: loadSearchStats, duplicates: loadDuplicates,
+  overview: loadStats, files: loadFiles, search: loadSearchStats, duplicates: loadDuplicatesPage,
   views: loadViews, plans: loadPlans, cleanup: loadCleanupKinds,
   recycle: loadRecycle, review: loadReview, mounts: loadMounts,
   media: loadMedia, tasks: loadTasks,
@@ -911,6 +920,134 @@ async function saveScanSettings() {
   } catch (e) { toast('保存设置失败：' + e.message, 'error'); }
 }
 
+// ---------- 每日重复检测 / 报告 ----------
+
+let dupPollTimer = null;
+
+function renderDedupeProgress(s) {
+  const slots = document.querySelectorAll('#dup-progress');
+  if (!slots.length) return;
+  const stageMap = { size: '按大小分组', headtail: '头尾哈希比对', full: '全量哈希确认' };
+  let html = '';
+  if (s.status === 'idle') {
+    html = `<div class="scan-idle">今日报告由系统每天自动生成。也可点击上方「立即检测并生成报告」。</div>`;
+  } else {
+    const pct = s.total > 0 ? Math.min(100, (s.count / s.total) * 100) : 0;
+    const pctStr = pct.toFixed(1);
+    const statusLabel = { running: '检测中', done: '已完成', error: '失败' }[s.status] || s.status;
+    const statusCls = s.status === 'done' ? 'badge-done' : s.status === 'error' ? 'badge-failed' : 'badge-running';
+    html = `
+      <div class="scan-status">
+        <span class="badge ${statusCls}">${statusLabel}</span>
+        <span class="hint">${s.stage ? escapeHtml(stageMap[s.stage] || s.stage) : ''}${s.last_report_date ? ' · 最近报告：' + s.last_report_date : ''}</span>
+      </div>
+      <div class="scan-bar"><div class="scan-bar-fill" style="width:${s.status === 'running' && s.total <= 0 ? 8 : pct}%"></div></div>
+      <div class="scan-nums">
+        <span>${s.status === 'done' ? '今日检测完成，报告已生成' : `${s.count.toLocaleString()} / ${s.total.toLocaleString()} (${pctStr}%)`}</span>
+        <span>${s.elapsed_sec != null ? '耗时 ' + s.elapsed_sec + 's' : ''}</span>
+      </div>
+      ${s.error ? `<p class="error">${escapeHtml(s.error)}</p>` : ''}`;
+  }
+  slots.forEach(el => { el.innerHTML = html; });
+}
+
+async function pollDedupeProgress() {
+  try {
+    const s = await api('/api/dedupe/progress');
+    renderDedupeProgress(s);
+    if (s.status === 'running' && !dupPollTimer) {
+      dupPollTimer = setInterval(pollDedupeProgress, 1500);
+    } else if (s.status !== 'running' && dupPollTimer) {
+      clearInterval(dupPollTimer);
+      dupPollTimer = null;
+      loadDedupeReports();
+      loadedTabs.delete('duplicates');
+      if (currentPageFromHash() === 'duplicates') loadDuplicates();
+    }
+  } catch (_) { /* 轮询失败不打断用户 */ }
+}
+
+async function startDedupe() {
+  if (!confirm('确认立即检测重复文件并生成今日报告？只更新索引，不会移动或删除任何文件。')) return;
+  try {
+    const r = await api('/api/dedupe/start', { method: 'POST', body: {} });
+    if (!r.started) { toast(r.reason || '无法启动检测', 'error'); return; }
+    toast('查重已在后台启动', 'success');
+    if (!dupPollTimer) dupPollTimer = setInterval(pollDedupeProgress, 1500);
+    pollDedupeProgress();
+  } catch (e) { toast('启动检测失败：' + e.message, 'error'); }
+}
+
+async function loadDupSettings() {
+  try {
+    const s = await api('/api/dedupe/settings');
+    $('#dup-auto-enable').checked = !!s.auto_daily;
+    $('#dup-run-hour').value = String(s.run_hour ?? 3);
+    $('#dup-retention').value = String(s.retention_days ?? 30);
+    $('#dup-settings-status').textContent = s.auto_daily
+      ? `已开启 · 每天 ${String(s.run_hour).padStart(2, '0')}:00 自动生成报告`
+      : '未开启自动检测';
+  } catch (_) {}
+}
+
+async function saveDupSettings() {
+  const body = {
+    auto_daily: $('#dup-auto-enable').checked,
+    run_hour: parseInt($('#dup-run-hour').value, 10),
+    retention_days: parseInt($('#dup-retention').value, 10),
+    confirm: true,
+  };
+  try {
+    await api('/api/dedupe/settings', { method: 'POST', body });
+    toast('每日检测设置已保存', 'success');
+    loadDupSettings();
+  } catch (e) { toast('保存设置失败：' + e.message, 'error'); }
+}
+
+async function loadDedupeReports() {
+  const el = $('#dup-reports');
+  if (!el) return;
+  setLoading(el);
+  try {
+    const r = await api('/api/dedupe/reports?limit=30');
+    const list = r.reports || [];
+    if (!list.length) { setEmpty(el, '暂无报告。开启自动检测后每天生成，也可点「立即检测」。'); return; }
+    el.innerHTML = `<div class="table-scroll"><table>
+      <tr><th>日期</th><th>状态</th><th>重复组</th><th>重复文件</th><th>浪费空间</th><th>扫描文件</th><th>耗时</th><th></th></tr>
+      ${list.map(x => `<tr>
+        <td>${escapeHtml(x.report_date)}</td>
+        <td><span class="badge ${x.status === 'ok' ? 'badge-done' : 'badge-failed'}">${x.status === 'ok' ? '完成' : '失败'}</span></td>
+        <td>${Number(x.groups || 0).toLocaleString()}</td>
+        <td>${Number(x.dup_files || 0).toLocaleString()}</td>
+        <td>${fmtBytes(x.wasted_bytes)}</td>
+        <td>${Number(x.scanned_files || 0).toLocaleString()}</td>
+        <td>${x.duration_sec != null ? Number(x.duration_sec).toFixed(1) + 's' : '-'}</td>
+        <td><button onclick="showDedupeReport(${x.id})">查看</button></td>
+      </tr>`).join('')}
+      </table></div>`;
+  } catch (e) { setError(el, e.message); }
+}
+
+async function showDedupeReport(id) {
+  const el = $('#dup-report-detail');
+  setLoading(el);
+  try {
+    const d = await api('/api/dedupe/reports/' + id);
+    const groups = d.top_groups || [];
+    el.innerHTML = `<div class="panel" style="margin-top:10px">
+      <h3>${escapeHtml(d.report_date)} 报告明细 · Top ${groups.length} 重复组</h3>
+      ${d.error ? `<p class="error">${escapeHtml(d.error)}</p>` : ''}
+      ${groups.length ? groups.map((g, i) => `
+        <div class="panel" style="margin:8px 0">
+          <h4>#${i + 1} · ${g.count} 个重复 · 浪费 ${fmtBytes(g.wasted_bytes)}</h4>
+          <div class="table-scroll"><table><tr><th>路径</th><th>大小</th><th>修改时间</th></tr>
+          ${(g.files || []).map(f => `<tr><td class="path">${escapeHtml(f.path)}</td><td>${fmtBytes(f.size)}</td><td>${fmtTime(f.mtime)}</td></tr>`).join('')}
+          </table></div>
+        </div>`).join('') : '<p class="hint">当日无重复组快照。</p>'}
+    </div>`;
+  } catch (e) { setError(el, e.message); }
+}
+
 async function post(path, body, label) {
   toast(`${label}中...`, 'info');
   try {
@@ -944,6 +1081,7 @@ async function boot() {
     // 扫描进度与定期增量设置：后台轮询会在 running 时自动启动
     pollScanProgress();
     loadScanSettings();
+    pollDedupeProgress();
   } catch (e) {
     if (e.message !== '未授权') toast('加载失败：' + e.message, 'error');
     showLogin();

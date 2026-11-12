@@ -59,6 +59,10 @@ def setup(config: Config, db: Database) -> FastAPI:
     from .scan_runtime import runtime
     runtime.ensure_scheduler(config, db)
 
+    # 每日查重调度器：默认开启（读 data/dedupe_settings.json），每天定时查重并出报告
+    from .dedupe_runtime import runtime as dedupe_rt
+    dedupe_rt.ensure_scheduler(config, db)
+
     web_dir = Path(__file__).parent.parent.parent / "web"
     if web_dir.exists() and not any(getattr(r, "path", "") == "/static" for r in app.routes):
         app.mount("/static", StaticFiles(directory=str(web_dir)), name="static")
@@ -399,6 +403,77 @@ def scan_settings_set(req: ScanSettingsRequest):
         raise HTTPException(400, str(exc))
     runtime.ensure_scheduler(_config or Config.load(), _get_db())
     return saved
+
+
+# ---------- 每日重复文件检测 + 报告 ----------
+
+class DedupeSettingsRequest(BaseModel):
+    auto_daily: bool | None = None
+    run_hour: int | None = None
+    retention_days: int | None = None
+    top_n: int | None = None
+    confirm: bool = False
+
+
+@app.post("/api/dedupe/start")
+def dedupe_start():
+    """后台启动一次查重并生成当日报告，立即返回；进度用 /api/dedupe/progress 轮询。"""
+    from .dedupe_runtime import runtime
+    return runtime.start(_config or Config.load(), _get_db(), manual=True)
+
+
+@app.get("/api/dedupe/progress")
+def dedupe_progress():
+    """实时查重进度（只读，供前端轮询）。"""
+    from .dedupe_runtime import runtime
+    return runtime.progress()
+
+
+@app.get("/api/dedupe/settings")
+def dedupe_settings_get():
+    """每日查重配置（只读）。"""
+    from .dedupe_runtime import load_settings
+    return load_settings(_config or Config.load())
+
+
+@app.post("/api/dedupe/settings")
+def dedupe_settings_set(req: DedupeSettingsRequest):
+    """修改每日查重配置：需 confirm=true。只写 data/dedupe_settings.json。"""
+    if not req.confirm:
+        raise HTTPException(400, "修改查重设置需显式确认：confirm=true")
+    from .dedupe_runtime import load_settings, runtime, save_settings
+    payload: dict = {}
+    for key in ("auto_daily", "run_hour", "retention_days", "top_n"):
+        val = getattr(req, key)
+        if val is not None:
+            payload[key] = val
+    saved = save_settings(_config or Config.load(), payload)
+    runtime.ensure_scheduler(_config or Config.load(), _get_db())
+    return saved
+
+
+@app.get("/api/dedupe/reports")
+def dedupe_reports(limit: int = 30):
+    """每日报告列表（按日期倒序，只读）。"""
+    from .dedupe_runtime import runtime
+    return {"reports": runtime.reports(_get_db(), limit)}
+
+
+@app.get("/api/dedupe/reports/latest")
+def dedupe_report_latest():
+    """最新一份每日报告摘要（只读）。"""
+    from .dedupe_runtime import runtime
+    return runtime.latest_report(_get_db()) or {}
+
+
+@app.get("/api/dedupe/reports/{report_id}")
+def dedupe_report_detail(report_id: int):
+    """单份报告详情（含重复组 Top N 快照，只读）。"""
+    from .dedupe_runtime import runtime
+    detail = runtime.report_detail(_get_db(), report_id)
+    if not detail:
+        raise HTTPException(404, "报告不存在")
+    return detail
 
 
 @app.post("/api/classify")
