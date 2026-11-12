@@ -41,6 +41,50 @@ class ConfirmBody(BaseModel):
     confirm: bool = False
 
 
+# ---------- 扫描卷绑定管理 ----------
+
+class MountBindBody(BaseModel):
+    name: str
+    path: str
+    role: str = "cold"
+    confirm: bool = False
+
+
+@router.get("/mounts")
+def mounts_list():
+    """列出容器内已挂载磁盘与当前生效的扫描卷（只读）。"""
+    from .mounts import bind_roots, discover_mounts, list_volumes
+    return {
+        "mounts": discover_mounts(_config()),
+        "volumes": list_volumes(_config()),
+        "allow_roots": bind_roots(_config()),
+    }
+
+
+@router.post("/mounts")
+def mounts_bind(body: MountBindBody):
+    """绑定扫描卷：需显式 confirm=true。只写 data/mounts.json，不动 config.yaml。"""
+    if not body.confirm:
+        raise HTTPException(400, "绑定扫描卷需显式确认：confirm=true")
+    from .mounts import bind
+    try:
+        return bind(_config(), body.name, body.path, body.role)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+
+@router.delete("/mounts/{name}")
+def mounts_unbind(name: str, confirm: bool = False):
+    """解绑扫描卷：需显式 confirm=true。"""
+    if not confirm:
+        raise HTTPException(400, "解绑扫描卷需显式确认：confirm=true")
+    from .mounts import unbind
+    try:
+        return unbind(_config(), name)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+
 # ---------- 搜索（FTS5） ----------
 
 @router.get("/search")
@@ -73,8 +117,9 @@ def cleanup(kinds: str = "", limit: int = 200):
     finder = CleanupFinder(_config(), _dbx())
     roots = _config().get("cleanup.roots", []) or []
     if not roots:
-        for v in (_config().get("volumes", []) or []):
-            if isinstance(v, dict) and v.get("path"):
+        from .mounts import effective_volumes
+        for v in effective_volumes(_config()):
+            if v.get("path"):
                 roots.append(v["path"])
     active = [k.strip() for k in kinds.split(",") if k.strip()] or None
     if active:

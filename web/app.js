@@ -5,10 +5,11 @@ const getToken = () => sessionStorage.getItem(TOKEN_KEY) || '';
 const setToken = (t) => t ? sessionStorage.setItem(TOKEN_KEY, t) : sessionStorage.removeItem(TOKEN_KEY);
 
 const $ = (s) => document.querySelector(s);
-/** 以编程方式切换 Tab（首启引导等场景使用），复用导航点击逻辑 */
+/** 以编程方式切换页面（首启引导等场景使用），复用 hash 路由 */
 function goTab(name) {
-  const btn = document.querySelector(`nav button[data-tab="${name}"]`);
-  if (btn) btn.click();
+  const target = '#/' + name;
+  if (location.hash === target) activatePage(name);
+  else location.hash = target;
 }
 
 // 主题必须在首屏前应用，避免闪烁
@@ -142,30 +143,55 @@ async function doChangePassword() {
   }
 }
 
-// ---------- Tab 切换（懒加载，首次进入才请求） ----------
+// ---------- 多页面路由（hash 路由；刷新/前进后退都能还原当前页面） ----------
 
 const loadedTabs = new Set();
 const TAB_LOADERS = {
   overview: loadStats, files: loadFiles, search: loadSearchStats, duplicates: loadDuplicates,
   views: loadViews, plans: loadPlans, cleanup: loadCleanupKinds,
-  recycle: loadRecycle, review: loadReview, media: loadMedia, tasks: loadTasks,
+  recycle: loadRecycle, review: loadReview, mounts: loadMounts,
+  media: loadMedia, tasks: loadTasks,
 };
+const VALID_PAGES = new Set(Object.keys(TAB_LOADERS));
+
+/** 切换到指定页面：更新导航态、面包屑、标题，并懒加载首次进入的页面 */
+function activatePage(name) {
+  if (!VALID_PAGES.has(name)) name = 'overview';
+  const btn = document.querySelector(`nav button[data-tab="${name}"]`);
+  document.querySelectorAll('nav button').forEach(x => {
+    x.classList.remove('active');
+    x.setAttribute('aria-selected', 'false');
+  });
+  document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+  if (btn) {
+    btn.classList.add('active');
+    btn.setAttribute('aria-selected', 'true');
+    $('#page-title').textContent = btn.dataset.title || name;
+    const group = btn.closest('.nav-group');
+    $('#page-group').textContent = group?.querySelector('.nav-group-title')?.textContent || 'NAS Organizer';
+  }
+  const section = $('#tab-' + name);
+  if (section) section.classList.add('active');
+  if (!loadedTabs.has(name)) {
+    loadedTabs.add(name);
+    const loader = TAB_LOADERS[name];
+    if (loader) Promise.resolve(loader()).catch(e => toast(e.message, 'error'));
+  }
+  // 切换页面后回到内容顶部
+  $('.main')?.scrollTo?.({ top: 0, behavior: 'auto' });
+  window.scrollTo({ top: 0, behavior: 'auto' });
+}
+
+function currentPageFromHash() {
+  const raw = (location.hash || '').replace(/^#\/?/, '').split('/')[0];
+  return VALID_PAGES.has(raw) ? raw : 'overview';
+}
 
 document.querySelectorAll('nav button').forEach(b => {
-  b.onclick = () => {
-    document.querySelectorAll('nav button').forEach(x => { x.classList.remove('active'); x.setAttribute('aria-selected', 'false'); });
-    document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
-    b.classList.add('active');
-    b.setAttribute('aria-selected', 'true');
-    const name = b.dataset.tab;
-    $('#tab-' + name).classList.add('active');
-    if (!loadedTabs.has(name)) {
-      loadedTabs.add(name);
-      const loader = TAB_LOADERS[name];
-      if (loader) Promise.resolve(loader()).catch(e => toast(e.message, 'error'));
-    }
-  };
+  b.onclick = () => { location.hash = '#/' + b.dataset.tab; };
 });
+// 浏览器前进/后退、地址栏直接输入 #/xxx 都会触发
+window.addEventListener('hashchange', () => activatePage(currentPageFromHash()));
 
 function bars(el, data, labelKey, valueKey) {
   if (!Array.isArray(data) || !data.length) { setEmpty(el, '暂无数据'); return; }
@@ -577,6 +603,95 @@ async function loadTasks() {
   } catch (e) { setError(el, e.message); }
 }
 
+// ---------- 磁盘挂载 / 扫描卷绑定 ----------
+
+const fmtPct = (used, total) => total > 0 ? ((used / total) * 100).toFixed(0) + '%' : '-';
+
+async function loadMounts() {
+  const disksEl = $('#mount-disk-list');
+  const volsEl = $('#mount-volume-list');
+  setLoading(disksEl, '探测挂载点中…');
+  setLoading(volsEl);
+  try {
+    const r = await api('/api/mounts');
+    const roots = r.allow_roots || [];
+    $('#mount-roots').textContent = '允许绑定的根目录：' + (roots.length ? roots.join('、') : '（未配置，请先设置扫描卷）');
+
+    // 容器内已挂载磁盘
+    if (!r.mounts.length) {
+      setEmpty(disksEl, '未探测到允许根内的挂载点（Windows 本机或非 Linux 环境会降级显示配置卷）。');
+    } else {
+      disksEl.innerHTML = `<div class="panel"><div class="table-scroll"><table>
+        <tr><th>挂载点</th><th>设备</th><th>文件系统</th><th>容量</th><th>已用</th><th>使用率</th><th>绑定状态</th></tr>
+        ${r.mounts.map(m => `<tr>
+          <td class="path">${escapeHtml(m.mount_point)}</td>
+          <td class="path">${escapeHtml(m.device || '-')}</td>
+          <td>${escapeHtml(m.fstype || '-')}</td>
+          <td>${fmtBytes(m.total_bytes)}</td><td>${fmtBytes(m.used_bytes)}</td>
+          <td>${fmtPct(m.used_bytes, m.total_bytes)}</td>
+          <td>${m.bound_name ? `<span class="badge badge-done">已绑定 · ${escapeHtml(m.bound_name)}</span>`
+                              : '<span class="badge">未绑定</span>'}</td></tr>`).join('')}
+      </table></div></div>`;
+    }
+
+    // 当前扫描卷（含解绑按钮）
+    if (!r.volumes.length) {
+      setEmpty(volsEl, '暂无扫描卷，请在上方绑定一个容器内目录。');
+    } else {
+      volsEl.innerHTML = `<div class="panel"><div class="table-scroll"><table>
+        <tr><th>名称</th><th>路径</th><th>角色</th><th>来源</th><th>状态</th><th>操作</th></tr>
+        ${r.volumes.map(v => `<tr>
+          <td><b>${escapeHtml(v.name)}</b></td>
+          <td class="path">${escapeHtml(v.path)}</td>
+          <td>${escapeHtml(v.role)}</td>
+          <td><span class="badge">${v.source === 'static' ? '静态配置' : '动态绑定'}</span></td>
+          <td>${v.exists
+                ? (v.enabled ? '<span class="badge badge-done">生效中</span>' : '<span class="badge badge-failed">已停用</span>')
+                : '<span class="badge badge-failed">目录不存在</span>'}</td>
+          <td>${v.enabled
+                ? `<button class="danger" onclick="unbindMount(${jsArg(v.name)})">解绑</button>`
+                : `<button onclick="rebindMount(${jsArg(v.name)}, ${jsArg(v.path)}, ${jsArg(v.role)})">重新绑定</button>`}</td></tr>`).join('')}
+      </table></div></div>`;
+    }
+    $('#mounts-updated').textContent = '共 ' + r.mounts.length + ' 个挂载点 · ' + r.volumes.length + ' 个扫描卷';
+  } catch (e) { setError(disksEl, e.message); setError(volsEl, e.message); }
+}
+
+async function bindMount() {
+  const name = $('#mount-name').value.trim();
+  const path = $('#mount-path').value.trim();
+  const role = $('#mount-role').value;
+  if (!name || !path) { toast('请填写名称与容器内路径', 'error'); return; }
+  if (!confirm(`确认绑定扫描卷「${name}」→ ${path}？\n只登记为扫描源，不会移动或修改任何文件。`)) return;
+  try {
+    await api('/api/mounts', { method: 'POST', body: { name, path, role, confirm: true } });
+    toast(`已绑定扫描卷「${name}」，重新运行扫描即可生效`, 'success');
+    $('#mount-name').value = ''; $('#mount-path').value = '';
+    loadedTabs.delete('mounts');
+    loadMounts();
+  } catch (e) { toast('绑定失败：' + e.message, 'error'); }
+}
+
+async function unbindMount(name) {
+  if (!confirm(`确认解绑扫描卷「${name}」？\n不会删除磁盘上的任何文件，仅从扫描源移除。`)) return;
+  try {
+    await api('/api/mounts/' + encodeURIComponent(name) + '?confirm=true', { method: 'DELETE' });
+    toast(`已解绑扫描卷「${name}」`, 'success');
+    loadedTabs.delete('mounts');
+    loadMounts();
+  } catch (e) { toast('解绑失败：' + e.message, 'error'); }
+}
+
+async function rebindMount(name, path, role) {
+  if (!confirm(`确认重新启用扫描卷「${name}」？`)) return;
+  try {
+    await api('/api/mounts', { method: 'POST', body: { name, path, role, confirm: true } });
+    toast(`已重新启用扫描卷「${name}」`, 'success');
+    loadedTabs.delete('mounts');
+    loadMounts();
+  } catch (e) { toast('重新绑定失败：' + e.message, 'error'); }
+}
+
 // ---------- 维护 / 危险操作 ----------
 
 async function post(path, body, label) {
@@ -605,8 +720,10 @@ async function boot() {
     const me = await api('/api/auth/me');
     $('#user-label').textContent = '已登录：' + (me.username || 'admin');
     hideLogin();
-    await loadStats();
-    loadedTabs.add('overview');
+    // 按当前 hash 还原页面（无 hash 时默认概览），刷新/前进后退都落在原页面
+    const page = currentPageFromHash();
+    activatePage(page);
+    if (!location.hash) location.replace('#/' + page);
   } catch (e) {
     if (e.message !== '未授权') toast('加载失败：' + e.message, 'error');
     showLogin();

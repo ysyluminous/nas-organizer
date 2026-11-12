@@ -45,7 +45,13 @@ class PathGuard:
         """显式配置优先；否则从现有配置自动推导，保证升级不破坏存量。"""
         raw: list[str] = [str(p) for p in configured if str(p).strip()]
         if not raw:
-            for vol in self.config.get("volumes", []) or []:
+            # Web 动态绑定的扫描卷也要纳入白名单，否则新绑定目录扫描时会被拦下
+            try:
+                from .mounts import effective_volumes
+                volumes_src = effective_volumes(self.config)
+            except Exception:
+                volumes_src = self.config.get("volumes", []) or []
+            for vol in volumes_src:
                 if vol.get("path"):
                     raw.append(str(vol["path"]))
             for target in self.config.get("write_targets", []) or []:

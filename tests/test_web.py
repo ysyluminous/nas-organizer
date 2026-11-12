@@ -38,11 +38,20 @@ def check_all():
     assert not missing, f"app.js 引用了不存在的 DOM id: {sorted(missing)}"
 
     # 3. 危险操作必须二次确认：调用危险 API 的函数体内需出现 confirm(
-    dangerous = ["execPlan", "rollback", "reindex", "autoTag", "submitReview"]
+    dangerous = ["execPlan", "rollback", "reindex", "autoTag", "submitReview",
+                 "bindMount", "unbindMount", "rebindMount"]
     for fn in dangerous:
         m = re.search(rf'(?:async\s+)?function\s+{fn}\s*\([^)]*\)\s*\{{(.*?)\n\}}', js, re.S)
         assert m, f"未找到函数 {fn}"
         assert "confirm(" in m.group(1), f"危险函数 {fn} 缺少二次确认"
+
+    # 3b. 多页面路由契约：hash 路由 + hashchange 监听 + 侧边栏分组 + 挂载页存在
+    assert "hashchange" in js, "缺少 hashchange 路由监听"
+    assert "activatePage" in js and "currentPageFromHash" in js, "缺少多页面激活逻辑"
+    assert 'class="sidebar"' in html, "缺少侧边栏容器"
+    assert 'class="nav-group-title"' in html, "缺少导航分组标题"
+    assert "mounts" in nav_tabs, "缺少磁盘挂载页面"
+    assert "id=\"tab-mounts\"" in html, "缺少挂载页 section"
 
     # 4. 认证数据不落客户端：SW 必须显式跳过 /api/
     assert "startsWith('/api/')" in sw, "Service Worker 未排除 /api/ 缓存"

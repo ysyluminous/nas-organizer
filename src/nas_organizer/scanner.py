@@ -27,10 +27,11 @@ class Scanner:
         self._progress = callback
 
     def scan_all(self) -> dict[str, int]:
-        """扫描所有配置的卷，返回各卷扫描文件数."""
+        """扫描所有当前生效的卷（含 Web 动态绑定），返回各卷扫描文件数."""
+        from .mounts import effective_volumes
         self.db.init_schema()
         results: dict[str, int] = {}
-        for vol in self.config.get("volumes", []):
+        for vol in effective_volumes(self.config):
             name = vol["name"]
             try:
                 root = self.guard.check(

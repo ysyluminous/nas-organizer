@@ -26,3 +26,13 @@ logs/*
 config/config.yaml
 *.log
 .DS_Store
+# 运行时诊断/部署临时产物
+.verify-config/
+.verify-data/
+nas-organizer-image.tar
+*.tar
+# NAS 排障时在本项目目录暂存的 unc CLI JSON 输出
+ims*.json
+now.json
+reg.json
+final.json

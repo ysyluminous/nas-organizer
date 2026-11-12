@@ -57,180 +57,232 @@
     </div>
   </header>
 
-  <nav aria-label="主导航">
-    <button class="active" data-tab="overview">概览</button>
-    <button data-tab="files">文件浏览</button>
-    <button data-tab="search">搜索</button>
-    <button data-tab="duplicates">重复文件</button>
-    <button data-tab="views">虚拟目录</button>
-    <button data-tab="plans">迁移计划</button>
-    <button data-tab="cleanup">清理发现</button>
-    <button data-tab="recycle">回收站</button>
-    <button data-tab="review">复核台</button>
-    <button data-tab="media">媒体与能力</button>
-    <button data-tab="tasks">任务与调度</button>
-    <button data-tab="actions">操作</button>
-  </nav>
-
-  <!-- 概览 -->
-  <section id="tab-overview" class="tab active">
-    <div class="cards" id="stat-cards"></div>
-    <div class="grid-2">
-      <div class="panel"><h3>按归属域</h3><div id="by-domain"></div></div>
-      <div class="panel"><h3>按文件类型</h3><div id="by-ftype"></div></div>
-      <div class="panel"><h3>按温度层</h3><div id="by-temp"></div></div>
-      <div class="panel"><h3>按磁盘卷</h3><div id="by-volume"></div></div>
-    </div>
-  </section>
-
-  <!-- 文件浏览 -->
-  <section id="tab-files" class="tab">
-    <div class="panel">
-      <h3>文件索引</h3>
-      <p class="hint">按归属域 / 类型 / 温度筛选，分页浏览已索引文件。只读视图。</p>
-      <div class="toolbar">
-        <select id="file-domain" aria-label="归属域筛选" onchange="loadFiles(1)"><option value="">全部归属域</option></select>
-        <select id="file-ftype" aria-label="类型筛选" onchange="loadFiles(1)"><option value="">全部类型</option></select>
-        <select id="file-temp" aria-label="温度筛选" onchange="loadFiles(1)"><option value="">全部温度</option></select>
-        <button onclick="loadFiles(1)">应用筛选</button>
-        <span class="hint" id="file-page-info"></span>
-      </div>
-    </div>
-    <div id="file-list"></div>
-  </section>
-
-  <!-- 搜索 -->
-  <section id="tab-search" class="tab">
-    <div class="panel">
-      <h3>全文搜索</h3>
-      <p class="hint">基于 SQLite FTS5，中文按 2-gram 分词（"报表"可命中"财务报表"）。只读索引，不移动任何文件。</p>
-      <div class="toolbar">
-        <input type="search" id="search-q" class="grow" placeholder="输入文件名关键词，如：财务报表 / 周杰伦 / S01E02" onkeydown="if(event.key==='Enter')loadSearch()">
-        <button class="primary" onclick="loadSearch()">搜索</button>
-        <button onclick="loadSearchStats()">索引状态</button>
-        <button class="danger" onclick="reindex()" title="重建索引（需确认）">重建索引</button>
-      </div>
-      <p id="search-stats" class="hint"></p>
-    </div>
-    <div id="search-list"></div>
-  </section>
-
-  <!-- 重复文件 -->
-  <section id="tab-duplicates" class="tab">
-    <div class="toolbar"><button onclick="loadDuplicates()">刷新</button></div>
-    <div id="dup-list"></div>
-  </section>
-
-  <!-- 虚拟目录 -->
-  <section id="tab-views" class="tab">
-    <div class="toolbar">
-      <button onclick="loadViews()">刷新</button>
-      <button class="danger" onclick="autoTag()" title="按域/类型/温度/年份自动打标（需确认）">自动打标</button>
-      <span class="hint">同一文件可属于多个视图，源文件零改动。</span>
-    </div>
-    <div id="view-stats" class="hint"></div>
-    <div id="view-list"></div>
-  </section>
-
-  <!-- 迁移计划 -->
-  <section id="tab-plans" class="tab">
-    <div class="toolbar">
-      <button onclick="loadPlans()">刷新</button>
-      <button class="primary" onclick="createPlan()">生成计划</button>
-    </div>
-    <div id="plan-list"></div>
-  </section>
-
-  <!-- 清理发现 -->
-  <section id="tab-cleanup" class="tab">
-    <div class="panel">
-      <h3>清理候选发现</h3>
-      <p class="hint warning">只读发现，绝不删除任何文件。清理动作请生成计划并确认后执行。</p>
-      <div class="toolbar">
-        <select id="cleanup-kind"><option value="">全部类型</option></select>
-        <button class="primary" onclick="loadCleanup()">扫描发现</button>
-        <span class="hint" id="cleanup-summary"></span>
-      </div>
-    </div>
-    <div id="cleanup-list"></div>
-  </section>
-
-  <!-- 回收站 -->
-  <section id="tab-recycle" class="tab">
-    <div class="toolbar">
-      <button onclick="loadRecycle()">刷新</button>
-      <select id="recycle-stage" onchange="loadRecycle()">
-        <option value="">全部阶段</option><option value="1">阶段1 · 隔离</option><option value="2">阶段2 · 待清除</option>
-      </select>
-      <span class="hint" id="recycle-stats"></span>
-    </div>
-    <p class="hint">还原与物理清除属于高危操作，仅通过 CLI / MCP 执行并强制二次确认；Web 端只提供只读视图。</p>
-    <div id="recycle-list"></div>
-  </section>
-
-  <!-- 复核台 -->
-  <section id="tab-review" class="tab">
-    <div class="toolbar">
-      <button onclick="loadReview()">刷新待复核</button>
-      <span class="hint" id="review-stat"></span>
-    </div>
-    <p class="hint">低置信度分类与执行失败的项目集中在此。裁决会立即修正当前文件，并把关键词写入反馈供同类文件自动归类；不移动任何文件。</p>
-    <div id="review-list"></div>
-    <h3>裁决历史</h3>
-    <div id="review-history"></div>
-  </section>
-
-  <!-- 媒体与能力 -->
-  <section id="tab-media" class="tab">
-    <div class="panel">
-      <h3>可选能力探测</h3>
-      <p class="hint">可选依赖缺失时自动降级，不影响核心流程。绿色=可用，灰色=未启用/未安装。</p>
-      <div id="capability-grid" class="cap-grid"></div>
-    </div>
-    <div class="panel">
-      <h3>相似内容（只读）</h3>
-      <div class="toolbar">
-        <button onclick="loadSimilar('phash')">相似图片（pHash）</button>
-        <button onclick="loadSimilar('video')">相似视频（关键帧）</button>
-      </div>
-      <div id="similar-list" class="hint">尚未扫描。</div>
-    </div>
-  </section>
-
-  <!-- 任务与调度 -->
-  <section id="tab-tasks" class="tab">
-    <div class="toolbar"><button onclick="loadTasks()">刷新</button></div>
-    <div id="task-list"></div>
-    <h3>定时任务</h3>
-    <p class="hint">cron 调度默认全关，且只跑只读任务（扫描/分类/查重/备份审计）。启用需在 config.yaml 中配置。</p>
-    <div id="schedule-list"></div>
-    <h3>操作审计时间线</h3>
-    <p class="hint">每次真实文件操作都记录源/目标、SHA-256 与回滚状态，形成可追溯的安全执行证据链。</p>
-    <div id="op-timeline"></div>
-  </section>
-
-  <!-- 操作 -->
-  <section id="tab-actions" class="tab">
-    <div class="grid-2">
-      <div class="panel">
-        <h3>维护操作</h3>
-        <p class="hint">扫描、分类、查重会修改索引，不会动文件本身。</p>
-        <div class="btn-row">
-          <button onclick="post('/api/scan',{},'扫描')">扫描建索引</button>
-          <button onclick="post('/api/classify',{},'分类')">重新分类</button>
-          <button onclick="post('/api/dedupe',{},'查重')">重复检测</button>
+  <div class="shell">
+    <!-- 侧边栏多页面导航（按功能分组） -->
+    <aside class="sidebar">
+      <nav aria-label="主导航">
+        <div class="nav-group">
+          <div class="nav-group-title">总览</div>
+          <button data-tab="overview" data-title="概览">概览</button>
+          <button data-tab="files" data-title="文件浏览">文件浏览</button>
+          <button data-tab="search" data-title="全文搜索">全文搜索</button>
+          <button data-tab="duplicates" data-title="重复文件">重复文件</button>
+          <button data-tab="views" data-title="虚拟目录">虚拟目录</button>
         </div>
-      </div>
-      <div class="panel">
-        <h3>危险操作</h3>
-        <p class="hint warning">执行计划会真实移动文件，回滚会撤销最近操作。两者都需二次确认，且全程写操作日志。</p>
-        <div class="btn-row">
-          <input type="number" id="rollback-limit" value="10" min="1" title="回滚条数" aria-label="回滚条数">
-          <button class="danger" onclick="rollback()">回滚最近操作</button>
+        <div class="nav-group">
+          <div class="nav-group-title">数据治理</div>
+          <button data-tab="plans" data-title="迁移计划">迁移计划</button>
+          <button data-tab="cleanup" data-title="清理发现">清理发现</button>
+          <button data-tab="review" data-title="复核台">复核台</button>
+          <button data-tab="recycle" data-title="回收站">回收站</button>
         </div>
+        <div class="nav-group">
+          <div class="nav-group-title">系统</div>
+          <button data-tab="mounts" data-title="磁盘挂载">磁盘挂载</button>
+          <button data-tab="media" data-title="媒体与能力">媒体与能力</button>
+          <button data-tab="tasks" data-title="任务与调度">任务与调度</button>
+          <button data-tab="actions" data-title="操作">操作</button>
+        </div>
+      </nav>
+    </aside>
+
+    <main class="main">
+      <div class="page-head">
+        <div class="crumb"><span>NAS Organizer</span><span class="crumb-sep">/</span><span id="page-group">总览</span></div>
+        <h2 id="page-title">概览</h2>
       </div>
-    </div>
-  </section>
+
+      <!-- 概览 -->
+      <section id="tab-overview" class="tab active">
+        <div class="cards" id="stat-cards"></div>
+        <div class="grid-2">
+          <div class="panel"><h3>按归属域</h3><div id="by-domain"></div></div>
+          <div class="panel"><h3>按文件类型</h3><div id="by-ftype"></div></div>
+          <div class="panel"><h3>按温度层</h3><div id="by-temp"></div></div>
+          <div class="panel"><h3>按磁盘卷</h3><div id="by-volume"></div></div>
+        </div>
+      </section>
+
+      <!-- 文件浏览 -->
+      <section id="tab-files" class="tab">
+        <div class="panel">
+          <h3>文件索引</h3>
+          <p class="hint">按归属域 / 类型 / 温度筛选，分页浏览已索引文件。只读视图。</p>
+          <div class="toolbar">
+            <select id="file-domain" aria-label="归属域筛选" onchange="loadFiles(1)"><option value="">全部归属域</option></select>
+            <select id="file-ftype" aria-label="类型筛选" onchange="loadFiles(1)"><option value="">全部类型</option></select>
+            <select id="file-temp" aria-label="温度筛选" onchange="loadFiles(1)"><option value="">全部温度</option></select>
+            <button onclick="loadFiles(1)">应用筛选</button>
+            <span class="hint" id="file-page-info"></span>
+          </div>
+        </div>
+        <div id="file-list"></div>
+      </section>
+
+      <!-- 搜索 -->
+      <section id="tab-search" class="tab">
+        <div class="panel">
+          <h3>全文搜索</h3>
+          <p class="hint">基于 SQLite FTS5，中文按 2-gram 分词（"报表"可命中"财务报表"）。只读索引，不移动任何文件。</p>
+          <div class="toolbar">
+            <input type="search" id="search-q" class="grow" placeholder="输入文件名关键词，如：财务报表 / 周杰伦 / S01E02" onkeydown="if(event.key==='Enter')loadSearch()">
+            <button class="primary" onclick="loadSearch()">搜索</button>
+            <button onclick="loadSearchStats()">索引状态</button>
+            <button class="danger" onclick="reindex()" title="重建索引（需确认）">重建索引</button>
+          </div>
+          <p id="search-stats" class="hint"></p>
+        </div>
+        <div id="search-list"></div>
+      </section>
+
+      <!-- 重复文件 -->
+      <section id="tab-duplicates" class="tab">
+        <div class="toolbar"><button onclick="loadDuplicates()">刷新</button></div>
+        <div id="dup-list"></div>
+      </section>
+
+      <!-- 虚拟目录 -->
+      <section id="tab-views" class="tab">
+        <div class="toolbar">
+          <button onclick="loadViews()">刷新</button>
+          <button class="danger" onclick="autoTag()" title="按域/类型/温度/年份自动打标（需确认）">自动打标</button>
+          <span class="hint">同一文件可属于多个视图，源文件零改动。</span>
+        </div>
+        <div id="view-stats" class="hint"></div>
+        <div id="view-list"></div>
+      </section>
+
+      <!-- 迁移计划 -->
+      <section id="tab-plans" class="tab">
+        <div class="toolbar">
+          <button onclick="loadPlans()">刷新</button>
+          <button class="primary" onclick="createPlan()">生成计划</button>
+        </div>
+        <div id="plan-list"></div>
+      </section>
+
+      <!-- 清理发现 -->
+      <section id="tab-cleanup" class="tab">
+        <div class="panel">
+          <h3>清理候选发现</h3>
+          <p class="hint warning">只读发现，绝不删除任何文件。清理动作请生成计划并确认后执行。</p>
+          <div class="toolbar">
+            <select id="cleanup-kind"><option value="">全部类型</option></select>
+            <button class="primary" onclick="loadCleanup()">扫描发现</button>
+            <span class="hint" id="cleanup-summary"></span>
+          </div>
+        </div>
+        <div id="cleanup-list"></div>
+      </section>
+
+      <!-- 复核台 -->
+      <section id="tab-review" class="tab">
+        <div class="toolbar">
+          <button onclick="loadReview()">刷新待复核</button>
+          <span class="hint" id="review-stat"></span>
+        </div>
+        <p class="hint">低置信度分类与执行失败的项目集中在此。裁决会立即修正当前文件，并把关键词写入反馈供同类文件自动归类；不移动任何文件。</p>
+        <div id="review-list"></div>
+        <h3>裁决历史</h3>
+        <div id="review-history"></div>
+      </section>
+
+      <!-- 回收站 -->
+      <section id="tab-recycle" class="tab">
+        <div class="toolbar">
+          <button onclick="loadRecycle()">刷新</button>
+          <select id="recycle-stage" onchange="loadRecycle()">
+            <option value="">全部阶段</option><option value="1">阶段1 · 隔离</option><option value="2">阶段2 · 待清除</option>
+          </select>
+          <span class="hint" id="recycle-stats"></span>
+        </div>
+        <p class="hint">还原与物理清除属于高危操作，仅通过 CLI / MCP 执行并强制二次确认；Web 端只提供只读视图。</p>
+        <div id="recycle-list"></div>
+      </section>
+
+      <!-- 磁盘挂载 -->
+      <section id="tab-mounts" class="tab">
+        <div class="panel">
+          <h3>容器内已挂载磁盘</h3>
+          <p class="hint">来自容器 <code>/proc/mounts</code> 的真实挂载点（仅显示允许根内的目录）。这是物理磁盘在容器里的落点，由 docker-compose 的 volumes 决定。</p>
+          <div class="toolbar"><button onclick="loadMounts()">刷新</button><span class="hint" id="mounts-updated"></span></div>
+          <div id="mount-disk-list"></div>
+        </div>
+        <div class="panel">
+          <h3>绑定扫描卷</h3>
+          <p class="hint warning">物理磁盘需先在 docker-compose 里挂载到容器；这里把容器内已可见的目录登记为扫描源。绑定后重新运行「扫描建索引」即可纳入统计。</p>
+          <div class="toolbar">
+            <input id="mount-name" placeholder="名称，如 media6" aria-label="扫描卷名称" style="width:150px">
+            <input id="mount-path" class="grow" placeholder="容器内路径，如 /scan/media6" aria-label="容器内路径">
+            <select id="mount-role" aria-label="温度角色">
+              <option value="cold">冷数据</option><option value="warm">温数据</option><option value="hot">热数据</option>
+            </select>
+            <button class="primary" onclick="bindMount()">绑定</button>
+          </div>
+          <p class="hint" id="mount-roots"></p>
+        </div>
+        <div class="panel">
+          <h3>当前扫描卷</h3>
+          <p class="hint">静态卷来自只读配置（解绑=停用标记，不改配置文件）；动态卷由本页面绑定，可彻底移除。</p>
+          <div id="mount-volume-list"></div>
+        </div>
+      </section>
+
+      <!-- 媒体与能力 -->
+      <section id="tab-media" class="tab">
+        <div class="panel">
+          <h3>可选能力探测</h3>
+          <p class="hint">可选依赖缺失时自动降级，不影响核心流程。绿色=可用，灰色=未启用/未安装。</p>
+          <div id="capability-grid" class="cap-grid"></div>
+        </div>
+        <div class="panel">
+          <h3>相似内容（只读）</h3>
+          <div class="toolbar">
+            <button onclick="loadSimilar('phash')">相似图片（pHash）</button>
+            <button onclick="loadSimilar('video')">相似视频（关键帧）</button>
+          </div>
+          <div id="similar-list" class="hint">尚未扫描。</div>
+        </div>
+      </section>
+
+      <!-- 任务与调度 -->
+      <section id="tab-tasks" class="tab">
+        <div class="toolbar"><button onclick="loadTasks()">刷新</button></div>
+        <div id="task-list"></div>
+        <h3>定时任务</h3>
+        <p class="hint">cron 调度默认全关，且只跑只读任务（扫描/分类/查重/备份审计）。启用需在 config.yaml 中配置。</p>
+        <div id="schedule-list"></div>
+        <h3>操作审计时间线</h3>
+        <p class="hint">每次真实文件操作都记录源/目标、SHA-256 与回滚状态，形成可追溯的安全执行证据链。</p>
+        <div id="op-timeline"></div>
+      </section>
+
+      <!-- 操作 -->
+      <section id="tab-actions" class="tab">
+        <div class="grid-2">
+          <div class="panel">
+            <h3>维护操作</h3>
+            <p class="hint">扫描、分类、查重会修改索引，不会动文件本身。</p>
+            <div class="btn-row">
+              <button onclick="post('/api/scan',{},'扫描')">扫描建索引</button>
+              <button onclick="post('/api/classify',{},'分类')">重新分类</button>
+              <button onclick="post('/api/dedupe',{},'查重')">重复检测</button>
+            </div>
+            <p class="hint">需要先绑定磁盘？到「磁盘挂载」页面登记扫描卷。</p>
+            <div class="btn-row"><button onclick="goTab('mounts')">前往磁盘挂载 →</button></div>
+          </div>
+          <div class="panel">
+            <h3>危险操作</h3>
+            <p class="hint warning">执行计划会真实移动文件，回滚会撤销最近操作。两者都需二次确认，且全程写操作日志。</p>
+            <div class="btn-row">
+              <input type="number" id="rollback-limit" value="10" min="1" title="回滚条数" aria-label="回滚条数">
+              <button class="danger" onclick="rollback()">回滚最近操作</button>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
 
   <div id="toast" role="status" aria-live="polite"></div>
 </div>

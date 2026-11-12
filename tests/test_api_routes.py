@@ -32,7 +32,7 @@ READ_ENDPOINTS = [
     "/api/recycle", "/api/recycle/stats", "/api/audit/backup",
     "/api/media/capability", "/api/plugins/capability",
     "/api/phash/similar", "/api/video/similar", "/api/feedback", "/api/schedule",
-    "/api/audit/operations",
+    "/api/audit/operations", "/api/mounts",
 ]
 
 # 会写索引但不碰用户文件的端点：无 confirm 必须 400
@@ -101,6 +101,18 @@ def check_all():
             # 7. 未知清理类型返回 400（输入校验）
             r = client.get("/api/cleanup?kinds=__not_a_kind__", headers=headers)
             assert r.status_code == 400 and "未知清理类型" in r.text
+
+            # 8. 挂载绑定/解绑：confirm 强制校验 + 越界路径拒绝
+            assert client.post("/api/mounts", json={"name": "x", "path": "/etc"}).status_code == 401
+            r = client.post("/api/mounts", headers=headers, json={"name": "x", "path": "/etc"})
+            assert r.status_code == 400 and "confirm" in r.text, r.text
+            r = client.post("/api/mounts", headers=headers,
+                            json={"name": "x", "path": "/etc", "confirm": True})
+            assert r.status_code == 400, "越界路径未被拒绝"
+            r = client.delete("/api/mounts/nope", headers=headers)
+            assert r.status_code == 400 and "confirm" in r.text, r.text
+            r = client.delete("/api/mounts/nope?confirm=true", headers=headers)
+            assert r.status_code == 400 and "未找到" in r.text, r.text
 
             print(f"API 全路由集成测试通过：{len(READ_ENDPOINTS)} 只读端点 + "
                   f"{len(CONFIRM_ENDPOINTS)} 确认端点 + 静态/PWA/安全头")
