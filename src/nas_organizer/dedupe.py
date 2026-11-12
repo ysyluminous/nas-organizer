@@ -39,10 +39,11 @@ class Deduper:
         size_candidates = sum(len(g) for g in candidates)
         print(f"[DEDUPE] 一级过滤后剩 {size_candidates} 个候选（{len(candidates)} 组）")
         if self._progress:
-            self._progress("size", size_candidates, len(records))
+            self._progress("size", size_candidates, size_candidates)
 
-        # 第二级：头尾哈希
+        # 第二级：头尾哈希（逐文件读盘较慢，周期内上报细分进度）
         by_headtail: dict[tuple[str, str], list[FileRecord]] = defaultdict(list)
+        ht_done = 0
         for group in candidates:
             for rec in group:
                 try:
@@ -51,14 +52,19 @@ class Deduper:
                     by_headtail[(head, tail)].append(rec)
                 except (OSError, PermissionError) as exc:
                     print(f"[WARN] 读文件失败 {rec.path}: {exc}")
+                ht_done += 1
+                if self._progress and ht_done % 500 == 0:
+                    self._progress("headtail", ht_done, size_candidates)
         candidates2 = [g for g in by_headtail.values() if len(g) > 1]
         ht_candidates = sum(len(g) for g in candidates2)
         print(f"[DEDUPE] 二级过滤后剩 {ht_candidates} 个候选（{len(candidates2)} 组）")
         if self._progress:
-            self._progress("headtail", ht_candidates, size_candidates)
+            self._progress("headtail", size_candidates, size_candidates)
 
-        # 第三级：全量哈希
+        # 第三级：全量哈希（周期上报细分进度）
         by_full: dict[str, list[FileRecord]] = defaultdict(list)
+        full_total = sum(len(g) for g in candidates2)
+        full_done = 0
         with ThreadPoolExecutor(max_workers=self.workers) as pool:
             futures = {}
             for group in candidates2:
@@ -72,10 +78,13 @@ class Deduper:
                     by_full[digest].append(rec)
                 except (OSError, PermissionError) as exc:
                     print(f"[WARN] 全量哈希失败 {rec.path}: {exc}")
+                full_done += 1
+                if self._progress and full_done % 200 == 0:
+                    self._progress("full", full_done, full_total)
         dup_groups = [g for g in by_full.values() if len(g) > 1]
         print(f"[DEDUPE] 三级过滤后确认 {len(dup_groups)} 组重复")
         if self._progress:
-            self._progress("full", sum(len(g) for g in dup_groups), ht_candidates)
+            self._progress("full", full_total, full_total)
 
         # 标记非主文件
         marked = 0
