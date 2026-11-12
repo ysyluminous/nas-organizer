@@ -94,6 +94,7 @@
 
       <!-- 概览 -->
       <section id="tab-overview" class="tab active">
+        <div class="scan-progress-slot" id="scan-progress-overview"></div>
         <div class="cards" id="stat-cards"></div>
         <div class="grid-2">
           <div class="panel"><h3>按归属域</h3><div id="by-domain"></div></div>
@@ -103,20 +104,34 @@
         </div>
       </section>
 
-      <!-- 文件浏览 -->
+      <!-- 文件浏览（资源管理器式：文件树 + 面包屑 + 双视图切换） -->
       <section id="tab-files" class="tab">
-        <div class="panel">
-          <h3>文件索引</h3>
-          <p class="hint">按归属域 / 类型 / 温度筛选，分页浏览已索引文件。只读视图。</p>
-          <div class="toolbar">
-            <select id="file-domain" aria-label="归属域筛选" onchange="loadFiles(1)"><option value="">全部归属域</option></select>
-            <select id="file-ftype" aria-label="类型筛选" onchange="loadFiles(1)"><option value="">全部类型</option></select>
-            <select id="file-temp" aria-label="温度筛选" onchange="loadFiles(1)"><option value="">全部温度</option></select>
-            <button onclick="loadFiles(1)">应用筛选</button>
-            <span class="hint" id="file-page-info"></span>
+        <div class="explorer">
+          <aside class="explorer-tree">
+            <div class="explorer-tree-head">
+              <span>文件夹</span>
+              <button class="icon-btn" onclick="loadExplorerRoots()" title="刷新目录树" aria-label="刷新目录树">⟳</button>
+            </div>
+            <div class="explorer-tree-search">
+              <input type="search" id="tree-filter" placeholder="筛选目录名…" oninput="filterTree(this.value)" aria-label="筛选目录名">
+            </div>
+            <div id="tree-root"></div>
+          </aside>
+          <div class="explorer-main">
+            <div class="explorer-toolbar">
+              <nav id="explorer-crumbs" class="crumbs" aria-label="路径面包屑"></nav>
+              <div class="view-switch" role="group" aria-label="显示逻辑切换">
+                <button id="view-btn-grid" class="view-btn active" onclick="setExplorerView('grid')" title="网格视图">▦ 网格</button>
+                <button id="view-btn-list" class="view-btn" onclick="setExplorerView('list')" title="列表视图">☰ 列表</button>
+              </div>
+            </div>
+            <div class="explorer-head">
+              <h3 id="explorer-title">所有文件夹</h3>
+              <span class="hint" id="explorer-summary"></span>
+            </div>
+            <div id="explorer-content"></div>
           </div>
         </div>
-        <div id="file-list"></div>
       </section>
 
       <!-- 搜索 -->
@@ -261,10 +276,34 @@
       <section id="tab-actions" class="tab">
         <div class="grid-2">
           <div class="panel">
-            <h3>维护操作</h3>
-            <p class="hint">扫描、分类、查重会修改索引，不会动文件本身。</p>
+            <h3>扫描进度</h3>
+            <p class="hint">扫描在后台运行，进度实时刷新。全量扫描较慢，日常用增量即可自动纳入新增文件。</p>
+            <div class="scan-progress-slot" id="scan-progress-actions"></div>
+            <div class="btn-row" style="margin-top:10px">
+              <button class="primary" onclick="startScan(true)">增量扫描</button>
+              <button onclick="startScan(false)">全量扫描</button>
+            </div>
+          </div>
+          <div class="panel">
+            <h3>定期增量</h3>
+            <p class="hint">开启后按间隔自动增量扫描，新增/变更文件自动入库。只更新索引，不动文件。</p>
+            <div class="toolbar">
+              <label class="switch-label"><input type="checkbox" id="auto-inc-enable" onchange="saveScanSettings()"> 自动增量</label>
+              <select id="auto-inc-interval" onchange="saveScanSettings()" aria-label="增量间隔">
+                <option value="5">每 5 分钟</option>
+                <option value="15">每 15 分钟</option>
+                <option value="30">每 30 分钟</option>
+                <option value="60">每 1 小时</option>
+                <option value="360">每 6 小时</option>
+                <option value="1440">每 24 小时</option>
+              </select>
+              <span class="hint" id="auto-inc-status"></span>
+            </div>
+          </div>
+          <div class="panel">
+            <h3>其他维护</h3>
+            <p class="hint">分类、查重会修改索引，不会动文件本身。</p>
             <div class="btn-row">
-              <button onclick="post('/api/scan',{},'扫描')">扫描建索引</button>
               <button onclick="post('/api/classify',{},'分类')">重新分类</button>
               <button onclick="post('/api/dedupe',{},'查重')">重复检测</button>
             </div>

@@ -55,6 +55,10 @@ def setup(config: Config, db: Database) -> FastAPI:
         app.include_router(ext_router)
         _ext_mounted = True
 
+    # 自动增量调度器：默认关闭（读 data/scan_settings.json），开启后后台周期触发增量扫描
+    from .scan_runtime import runtime
+    runtime.ensure_scheduler(config, db)
+
     web_dir = Path(__file__).parent.parent.parent / "web"
     if web_dir.exists() and not any(getattr(r, "path", "") == "/static" for r in app.routes):
         app.mount("/static", StaticFiles(directory=str(web_dir)), name="static")
@@ -345,6 +349,56 @@ def rollback(req: ConfirmRequest):
 def scan():
     from .scanner import Scanner
     return Scanner(_config or Config.load(), _get_db()).scan_all()
+
+
+class ScanStartRequest(BaseModel):
+    incremental: bool = False
+
+
+class ScanSettingsRequest(BaseModel):
+    auto_incremental: bool | None = None
+    interval_minutes: int | None = None
+    confirm: bool = False
+
+
+@app.post("/api/scan/start")
+def scan_start(req: ScanStartRequest = ScanStartRequest()):
+    """异步启动扫描，立即返回；进度用 /api/scan/progress 轮询。"""
+    from .scan_runtime import runtime
+    return runtime.start(_config or Config.load(), _get_db(), incremental=req.incremental)
+
+
+@app.get("/api/scan/progress")
+def scan_progress():
+    """实时扫描进度（只读，供前端轮询）。"""
+    from .scan_runtime import runtime
+    return runtime.progress()
+
+
+@app.get("/api/scan/settings")
+def scan_settings_get():
+    """自动增量调度配置（只读）。"""
+    from .scan_runtime import load_settings
+    return load_settings(_config or Config.load())
+
+
+@app.post("/api/scan/settings")
+def scan_settings_set(req: ScanSettingsRequest):
+    """修改自动增量调度配置：需 confirm=true。只写 data/scan_settings.json。"""
+    if not req.confirm:
+        raise HTTPException(400, "修改扫描设置需显式确认：confirm=true")
+    from .scan_runtime import load_settings, runtime, save_settings
+    payload = {}
+    if req.auto_incremental is not None:
+        payload["auto_incremental"] = req.auto_incremental
+    if req.interval_minutes is not None:
+        payload["interval_minutes"] = req.interval_minutes
+    try:
+        saved = save_settings(_config or Config.load(), payload)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    runtime.ensure_scheduler(_config or Config.load(), _get_db())
+    return saved
 
 
 @app.post("/api/classify")

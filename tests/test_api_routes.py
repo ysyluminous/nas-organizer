@@ -33,6 +33,8 @@ READ_ENDPOINTS = [
     "/api/media/capability", "/api/plugins/capability",
     "/api/phash/similar", "/api/video/similar", "/api/feedback", "/api/schedule",
     "/api/audit/operations", "/api/mounts",
+    "/api/scan/progress",
+    "/api/tree/children", "/api/tree/ancestors",
 ]
 
 # 会写索引但不碰用户文件的端点：无 confirm 必须 400

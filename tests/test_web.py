@@ -39,7 +39,7 @@ def check_all():
 
     # 3. 危险操作必须二次确认：调用危险 API 的函数体内需出现 confirm(
     dangerous = ["execPlan", "rollback", "reindex", "autoTag", "submitReview",
-                 "bindMount", "unbindMount", "rebindMount"]
+                 "bindMount", "unbindMount", "rebindMount", "startScan"]
     for fn in dangerous:
         m = re.search(rf'(?:async\s+)?function\s+{fn}\s*\([^)]*\)\s*\{{(.*?)\n\}}', js, re.S)
         assert m, f"未找到函数 {fn}"

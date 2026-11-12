@@ -238,49 +238,179 @@ async function loadStats() {
   } catch (e) { setError(el, e.message); }
 }
 
-// ---------- 文件浏览（筛选 + 分页） ----------
+// ---------- 文件浏览（资源管理器式：文件树 + 面包屑 + 双视图） ----------
 
-const FILE_PAGE_SIZE = 50;
-let fileOffset = 0;
-async function loadFiles(page = 1) {
-  const el = $('#file-list');
-  fileOffset = (page - 1) * FILE_PAGE_SIZE;
-  if (page === 1) {
-    // 首次加载：用当前索引的统计结果填充筛选下拉，避免硬编码分类值
-    try {
-      const s = await api('/api/stats');
-      const fill = (sel, items, key) => {
-        const cur = $(sel).value;
-        $(sel).innerHTML = `<option value="">全部</option>` +
-          items.map(d => `<option value="${escapeHtml(d[key] || '')}">${escapeHtml(d[key] || '未分类')} (${d.n})</option>`).join('');
-        $(sel).value = cur;
-      };
-      fill('#file-domain', s.by_domain, 'domain');
-      fill('#file-ftype', s.by_ftype, 'ftype');
-      fill('#file-temp', s.by_temp, 'temp');
-    } catch (_) { /* 下拉填充失败不影响主列表 */ }
-  }
-  setLoading(el, '加载文件索引…');
+const FILE_VIEW_KEY = 'nas_organizer_file_view';
+let fileView = localStorage.getItem(FILE_VIEW_KEY) || 'grid';
+let currentDir = '';
+let treeRoots = [];
+let treeExpanded = new Set();
+
+const FILE_EXT_ICON = {
+  mp4:'🎬', mkv:'🎬', avi:'🎬', mov:'🎬', srt:'📄',
+  mp3:'🎵', flac:'🎵', wav:'🎵', m4a:'🎵',
+  jpg:'🖼️', jpeg:'🖼️', png:'🖼️', gif:'🖼️', webp:'🖼️',
+  pdf:'📕', doc:'📘', docx:'📘', xls:'📗', xlsx:'📗', ppt:'📙', pptx:'📙', txt:'📄', md:'📄',
+  epub:'📚', mobi:'📚', azw3:'📚', zip:'🗜️', rar:'🗜️', '7z':'🗜️',
+};
+function fileIcon(item) {
+  if (item.is_dir) return '📁';
+  return FILE_EXT_ICON[(item.ext || '').toLowerCase()] || '📄';
+}
+
+/** 加载文件树根节点（各扫描卷）并渲染 */
+async function loadExplorerRoots() {
+  const el = $('#tree-root');
+  setLoading(el, '加载目录树…');
   try {
-    const params = new URLSearchParams({ limit: String(FILE_PAGE_SIZE), offset: String(fileOffset) });
-    for (const [k, id] of [['domain','#file-domain'], ['ftype','#file-ftype'], ['temp','#file-temp']]) {
-      const v = $(id).value; if (v) params.set(k, v);
-    }
-    const rows = await api('/api/files?' + params.toString());
-    $('#file-page-info').textContent = `第 ${page} 页 · 本页 ${rows.length} 条`;
-    if (!rows.length) { setEmpty(el, page > 1 ? '没有更多文件了。' : '索引为空，先在「操作」页运行扫描。'); return; }
-    el.innerHTML = `<div class="panel"><div class="table-scroll"><table>
-      <tr><th>路径</th><th>类型</th><th>归属域</th><th>温度</th><th>大小</th><th>置信度</th><th>判定方式</th></tr>
-      ${rows.map(f => `<tr><td class="path">${escapeHtml(f.path)}</td><td>${escapeHtml(f.ftype || '-')}</td>
-        <td>${escapeHtml(f.domain || '-')}</td><td>${escapeHtml(f.temp || '-')}</td><td>${fmtBytes(f.size)}</td>
-        <td>${f.confidence != null ? Number(f.confidence).toFixed(2) : '-'}</td>
-        <td>${escapeHtml(f.classified_by || '-')}${f.is_duplicate ? ' · 重复' : ''}</td></tr>`).join('')}
-      </table></div>
-      <div class="btn-row">
-        <button onclick="loadFiles(${Math.max(1, page - 1)})" ${page <= 1 ? 'disabled' : ''}>上一页</button>
-        <button onclick="loadFiles(${page + 1})" ${rows.length < FILE_PAGE_SIZE ? 'disabled' : ''}>下一页</button>
-      </div></div>`;
+    const r = await api('/api/tree/children?path=&limit=1000');
+    treeRoots = r.items || [];
+    treeExpanded.clear();
+    renderTreeNodeList(el, treeRoots, 0);
   } catch (e) { setError(el, e.message); }
+}
+
+/** 渲染一层树节点（可逐级展开） */
+function renderTreeNodeList(container, items, depth) {
+  if (!items.length) { setEmpty(container, '无目录'); return; }
+  container.innerHTML = items.map((it, i) => {
+    const key = it.path;
+    const expanded = treeExpanded.has(key);
+    return `<div class="tree-node-wrap">
+      <div class="tree-node" data-key="${escapeHtml(key)}" style="padding-left:${8 + depth * 16}px">
+        <button class="tree-arrow ${it.is_dir ? '' : 'leaf'}" onclick="toggleTreeNode(${jsArg(key)}, ${i}, this)" ${it.is_dir ? '' : 'disabled'}>${expanded ? '▾' : '▸'}</button>
+        <span class="tree-icon">${fileIcon(it)}</span>
+        <span class="tree-name" onclick="openTreeNode(${jsArg(key)}, ${jsArg(it.name)}, ${it.is_dir})" title="${escapeHtml(it.path)}">${escapeHtml(it.name)}</span>
+      </div>
+      <div class="tree-children" data-children="${escapeHtml(key)}" ${expanded ? '' : 'hidden'}></div>
+    </div>`;
+  }).join('');
+}
+
+/** 展开/收起目录节点：一级一级加载（懒加载） */
+async function toggleTreeNode(key, index, btn) {
+  const childEl = document.querySelector(`[data-children="${CSS.escape(key)}"]`);
+  if (!childEl) return;
+  if (treeExpanded.has(key)) {
+    treeExpanded.delete(key);
+    childEl.hidden = true;
+    childEl.innerHTML = '';
+    btn.textContent = '▸';
+    return;
+  }
+  treeExpanded.add(key);
+  childEl.hidden = false;
+  btn.textContent = '▾';
+  if (childEl.dataset.loaded === '1') return;
+  setLoading(childEl, '展开中…');
+  try {
+    const r = await api('/api/tree/children?path=' + encodeURIComponent(key) + '&limit=1000');
+    const dirs = (r.items || []).filter(x => x.is_dir);
+    childEl.dataset.loaded = '1';
+    renderTreeNodeList(childEl, dirs, (btn.closest('.tree-node')?.style.paddingLeft?.replace(/\D/g, '') / 16) || 1);
+  } catch (e) {
+    childEl.dataset.loaded = '';
+    setError(childEl, e.message);
+  }
+}
+
+/** 点击树节点名称：进入该目录（打开新的一级页面） */
+function openTreeNode(path, name, isDir) {
+  if (!isDir) { toast('这是文件，请在右侧目录内容中查看', 'info'); return; }
+  browseDir(path);
+}
+
+/** 右侧面包屑导航 */
+async function browseDir(path) {
+  currentDir = path || '';
+  setLoading($('#explorer-content'), '打开目录…');
+  try {
+    const [anc, listing] = await Promise.all([
+      api('/api/tree/ancestors?path=' + encodeURIComponent(currentDir)),
+      api('/api/tree/children?path=' + encodeURIComponent(currentDir) + '&limit=1000'),
+    ]);
+    renderCrumbs(anc.items || []);
+    $('#explorer-title').textContent = path ? (listing.name || path.split('/').pop()) : '所有文件夹';
+    if (listing.denied) { setError($('#explorer-content'), '目录不在允许的扫描范围内'); return; }
+    $('#explorer-summary').textContent =
+      `${listing.dir_count || 0} 个子目录 · ${listing.file_count || 0} 个文件` +
+      (listing.total > 1000 ? `（显示前 1000 / ${listing.total}）` : '');
+    renderExplorerItems(listing.items || []);
+    // 同步展开左侧树到当前目录
+    expandTreeToCurrent(path, anc.items || []);
+  } catch (e) { setError($('#explorer-content'), e.message); }
+}
+
+/** 渲染面包屑（点任一级可跳回） */
+function renderCrumbs(items) {
+  const root = `<button class="crumb-link" onclick="browseDir('')">🏠 根</button>`;
+  const crumbs = items.map((a, i) =>
+    `<span class="crumb-sep">/</span><button class="crumb-link ${i === items.length - 1 ? 'current' : ''}" onclick="browseDir(${jsArg(a.path)})">${escapeHtml(a.name)}</button>`
+  ).join('');
+  $('#explorer-crumbs').innerHTML = root + crumbs;
+}
+
+/** 同步展开左侧树到当前目录（逐级展开祖先） */
+async function expandTreeToCurrent(path, ancestors) {
+  if (!path || !ancestors.length) return;
+  let parentEl = $('#tree-root');
+  for (const a of ancestors) {
+    const node = parentEl.querySelector(`[data-key="${CSS.escape(a.path)}"]`);
+    if (!node) break;
+    const arrow = node.querySelector('.tree-arrow');
+    if (arrow && !treeExpanded.has(a.path)) {
+      await toggleTreeNode(a.path, 0, arrow);
+    }
+    parentEl = parentEl.querySelector(`[data-children="${CSS.escape(a.path)}"]`) || parentEl;
+  }
+}
+
+/** 渲染右侧内容：网格 / 列表 两套显示逻辑 */
+function renderExplorerItems(items) {
+  const el = $('#explorer-content');
+  if (!items.length) { setEmpty(el, '此目录为空（索引中无文件）。'); return; }
+  if (fileView === 'grid') {
+    el.innerHTML = `<div class="file-grid">${items.map(it => `
+      <div class="file-tile ${it.is_dir ? 'is-dir' : ''}" onclick="${it.is_dir ? `browseDir(${jsArg(it.path)})` : `toast(${jsArg('文件：' + it.name)}, 'info')`}" title="${escapeHtml(it.path)}">
+        <div class="tile-icon">${fileIcon(it)}</div>
+        <div class="tile-name">${escapeHtml(it.name)}</div>
+        <div class="tile-meta">${it.is_dir ? `${it.file_count || 0} 项` : fmtBytes(it.size)}</div>
+      </div>`).join('')}</div>`;
+  } else {
+    el.innerHTML = `<div class="panel"><div class="table-scroll"><table>
+      <tr><th>名称</th><th>类型</th><th>大小</th><th>修改时间</th></tr>
+      ${items.map(it => `<tr class="clickable-row" onclick="${it.is_dir ? `browseDir(${jsArg(it.path)})` : `toast(${jsArg('文件：' + it.name)}, 'info')`}">
+        <td><span class="row-icon">${fileIcon(it)}</span> ${escapeHtml(it.name)}</td>
+        <td>${it.is_dir ? '文件夹' : escapeHtml((it.ext || '文件').toUpperCase())}</td>
+        <td>${it.is_dir ? '—' : fmtBytes(it.size)}</td>
+        <td>${it.is_dir ? '—' : fmtTime(it.mtime)}</td></tr>`).join('')}
+      </table></div></div>`;
+  }
+}
+
+/** 切换显示逻辑：网格 / 列表 */
+function setExplorerView(view) {
+  fileView = view === 'list' ? 'list' : 'grid';
+  localStorage.setItem(FILE_VIEW_KEY, fileView);
+  $('#view-btn-grid').classList.toggle('active', fileView === 'grid');
+  $('#view-btn-list').classList.toggle('active', fileView === 'list');
+  // 用当前目录数据重绘，避免重复请求
+  browseDir(currentDir);
+}
+
+/** 左侧目录树关键字筛选（前端按已加载节点名称过滤） */
+function filterTree(kw) {
+  const q = (kw || '').trim().toLowerCase();
+  document.querySelectorAll('#tree-root .tree-node').forEach(n => {
+    const name = (n.querySelector('.tree-name')?.textContent || '').toLowerCase();
+    n.style.display = (!q || name.includes(q)) ? '' : 'none';
+  });
+}
+
+async function loadFiles() {
+  // 兼容首启引导等旧调用：进入文件浏览页即加载目录树与根目录
+  await loadExplorerRoots();
+  await browseDir(currentDir);
 }
 
 // ---------- 搜索 ----------
@@ -692,7 +822,94 @@ async function rebindMount(name, path, role) {
   } catch (e) { toast('重新绑定失败：' + e.message, 'error'); }
 }
 
-// ---------- 维护 / 危险操作 ----------
+// ---------- 扫描进度（实时轮询） / 定期增量 ----------
+
+let scanPollTimer = null;
+
+function renderScanProgress(s) {
+  const slots = document.querySelectorAll('.scan-progress-slot');
+  if (!slots.length) return;
+  let html = '';
+  if (s.status === 'idle') {
+    html = `<div class="scan-idle">当前没有扫描任务。点击「增量扫描」或「全量扫描」开始。</div>`;
+  } else {
+    const discovering = s.phase === 'discovering' && s.status === 'running';
+    const pct = discovering || s.total <= 0 ? 0 : Math.min(100, (s.done / s.total) * 100);
+    const pctStr = discovering ? '遍历中' : pct.toFixed(1) + '%';
+    const eta = s.status === 'running' && s.eta_sec && !discovering
+      ? ` · 预计剩余 ${s.eta_sec >= 60 ? (s.eta_sec / 60).toFixed(1) + ' 分' : s.eta_sec + ' 秒'}` : '';
+    const statusLabel = discovering ? '遍历目录' : { running: '扫描中', done: '已完成', error: '失败' }[s.status] || s.status;
+    const statusCls = s.status === 'done' ? 'badge-done' : s.status === 'error' ? 'badge-failed' : 'badge-running';
+    const barWidth = discovering ? 8 : pct;
+    html = `
+      <div class="scan-status">
+        <span class="badge ${statusCls}">${statusLabel}</span>
+        <span class="hint">${s.incremental ? '增量' : '全量'}${s.volume ? ' · 当前卷：' + escapeHtml(s.volume) : ''}</span>
+      </div>
+      <div class="scan-bar"><div class="scan-bar-fill ${discovering ? 'indeterminate' : ''}" style="width:${barWidth}%"></div></div>
+      <div class="scan-nums">
+        <span>${discovering ? `正在遍历目录 · 已发现 ${s.done.toLocaleString()} 个文件` : `${s.done.toLocaleString()} / ${s.total.toLocaleString()} 个文件 (${pctStr})`}</span>
+        <span>${discovering ? '大盘目录遍历可能需要一会儿…' : `本次入库 ${(s.found || 0).toLocaleString()} · 速度 ${s.speed || 0} 个/秒${eta}`}</span>
+      </div>
+      ${s.error ? `<p class="error">${escapeHtml(s.error)}</p>` : ''}
+      ${Object.keys(s.volumes || {}).length
+        ? `<div class="scan-vols">${Object.entries(s.volumes).map(([k, v]) => `<span class="badge">${escapeHtml(k)}: ${Number(v).toLocaleString()}</span>`).join('')}</div>`
+        : ''}`;
+  }
+  slots.forEach(el => { el.innerHTML = html; });
+}
+
+async function pollScanProgress() {
+  try {
+    const s = await api('/api/scan/progress');
+    renderScanProgress(s);
+    if (s.status === 'running' && !scanPollTimer) {
+      scanPollTimer = setInterval(pollScanProgress, 1500);
+    } else if (s.status !== 'running' && scanPollTimer) {
+      clearInterval(scanPollTimer);
+      scanPollTimer = null;
+      // 扫描完成后刷新概览统计
+      loadedTabs.delete('overview');
+      if (currentPageFromHash() === 'overview') loadStats();
+    }
+  } catch (_) { /* 轮询失败不打断用户 */ }
+}
+
+async function startScan(incremental) {
+  const label = incremental ? '增量扫描' : '全量扫描';
+  if (!confirm(`确认开始${label}？只更新索引，不会移动或修改任何文件。`)) return;
+  try {
+    const r = await api('/api/scan/start', { method: 'POST', body: { incremental } });
+    if (!r.started) { toast(r.reason || '无法启动扫描', 'error'); return; }
+    toast(`${label}已在后台启动`, 'success');
+    if (!scanPollTimer) scanPollTimer = setInterval(pollScanProgress, 1500);
+    pollScanProgress();
+  } catch (e) { toast('启动扫描失败：' + e.message, 'error'); }
+}
+
+async function loadScanSettings() {
+  try {
+    const s = await api('/api/scan/settings');
+    $('#auto-inc-enable').checked = !!s.auto_incremental;
+    $('#auto-inc-interval').value = String(s.interval_minutes || 30);
+    $('#auto-inc-status').textContent = s.auto_incremental
+      ? `已开启 · 每 ${s.interval_minutes} 分钟自动增量`
+      : '未开启';
+  } catch (_) {}
+}
+
+async function saveScanSettings() {
+  const body = {
+    auto_incremental: $('#auto-inc-enable').checked,
+    interval_minutes: parseInt($('#auto-inc-interval').value, 10) || 30,
+    confirm: true,
+  };
+  try {
+    await api('/api/scan/settings', { method: 'POST', body });
+    toast('定期增量设置已保存', 'success');
+    loadScanSettings();
+  } catch (e) { toast('保存设置失败：' + e.message, 'error'); }
+}
 
 async function post(path, body, label) {
   toast(`${label}中...`, 'info');
@@ -724,6 +941,9 @@ async function boot() {
     const page = currentPageFromHash();
     activatePage(page);
     if (!location.hash) location.replace('#/' + page);
+    // 扫描进度与定期增量设置：后台轮询会在 running 时自动启动
+    pollScanProgress();
+    loadScanSettings();
   } catch (e) {
     if (e.message !== '未授权') toast('加载失败：' + e.message, 'error');
     showLogin();

@@ -85,6 +85,26 @@ def mounts_unbind(name: str, confirm: bool = False):
         raise HTTPException(400, str(exc))
 
 
+# ---------- 文件树 / 目录浏览（资源管理器式） ----------
+
+@router.get("/tree/children")
+def tree_children(path: str = "", limit: int = 300, offset: int = 0):
+    """列出目录的直接子目录与文件（模仿资源管理器进入一级目录）。
+
+    基于索引而非实时遍历大盘；只允许访问生效扫描卷内的路径。
+    """
+    from .filetree import FileTree
+    tree = FileTree(_config(), _dbx())
+    return tree.children(path, min(limit, 1000), max(offset, 0))
+
+
+@router.get("/tree/ancestors")
+def tree_ancestors(path: str = ""):
+    """面包屑：从根到当前目录。"""
+    from .filetree import FileTree
+    return {"items": FileTree(_config(), _dbx()).ancestors(path)}
+
+
 # ---------- 搜索（FTS5） ----------
 
 @router.get("/search")
